@@ -1,0 +1,53 @@
+variable "namespace" {
+  description = "Kubernetes namespace"
+  type        = string
+  default     = "default"
+}
+
+variable "dockerhub_username" {
+  description = "DockerHub username for image references"
+  type        = string
+}
+
+variable "image_tag" {
+  description = "Docker image tag to deploy"
+  type        = string
+  default     = "latest"
+}
+
+variable "storage_class" {
+  description = "Kubernetes storage class for PVCs"
+  type        = string
+}
+
+# api-gateway secrets
+variable "app_key" {
+  description = "Laravel APP_KEY"
+  type        = string
+  sensitive   = true
+}
+
+variable "jwt_secret" {
+  description = "JWT signing secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "gateway_db_password" {
+  description = "api-gateway MySQL root password"
+  type        = string
+  sensitive   = true
+}
+
+# abonnement secrets
+variable "abonnement_db_password" {
+  description = "abonnement MySQL user password"
+  type        = string
+  sensitive   = true
+}
+
+variable "mysql_root_password" {
+  description = "abonnement MySQL root password"
+  type        = string
+  sensitive   = true
+}
