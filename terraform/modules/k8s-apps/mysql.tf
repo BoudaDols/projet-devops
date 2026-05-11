@@ -17,6 +17,8 @@ resource "kubernetes_persistent_volume_claim" "api_gateway_mysql" {
       }
     }
   }
+
+  wait_until_bound = false
 }
 
 resource "kubernetes_deployment" "api_gateway_mysql" {
@@ -91,6 +93,8 @@ resource "kubernetes_deployment" "api_gateway_mysql" {
       }
     }
   }
+
+  wait_for_rollout = false
 }
 
 resource "kubernetes_service" "api_gateway_mysql" {
@@ -132,6 +136,8 @@ resource "kubernetes_persistent_volume_claim" "abonnement_mysql" {
       }
     }
   }
+
+  wait_until_bound = false
 }
 
 resource "kubernetes_deployment" "abonnement_mysql" {
@@ -226,6 +232,8 @@ resource "kubernetes_deployment" "abonnement_mysql" {
       }
     }
   }
+
+  wait_for_rollout = false
 }
 
 resource "kubernetes_service" "abonnement_mysql" {

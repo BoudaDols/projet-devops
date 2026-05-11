@@ -49,6 +49,21 @@ jobs:
           TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
         run: terraform apply -auto-approve
 
+      - name: Terraform Init (k8s apps)
+        working-directory: terraform/aws-k8s
+        run: terraform init
+
+      - name: Terraform Apply (k8s apps)
+        working-directory: terraform/aws-k8s
+        env:
+          TF_VAR_app_key: ${{ secrets.APP_KEY }}
+          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+          TF_VAR_gateway_db_password: ${{ secrets.DB_PASSWORD_GATEWAY }}
+          TF_VAR_abonnement_db_password: ${{ secrets.DB_PASSWORD_ABONNEMENT }}
+          TF_VAR_mysql_root_password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: terraform apply -auto-approve
+
   # ─────────────────────────────────────────────
   # Deploy Azure infrastructure
   # ─────────────────────────────────────────────

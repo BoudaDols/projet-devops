@@ -6,10 +6,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.0"
-    }
   }
 }
 
@@ -32,7 +28,7 @@ module "vpc" {
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
 
   enable_nat_gateway   = true
-  single_nat_gateway   = true # cheapest — one NAT for all AZs
+  single_nat_gateway   = true
   enable_dns_hostnames = true
 
   public_subnet_tags = {
@@ -52,16 +48,17 @@ module "eks" {
   version = "~> 20.0"
 
   cluster_name    = var.eks_cluster_name
-  cluster_version = "1.29"
+  cluster_version = "1.30"
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  cluster_endpoint_public_access = true
+  cluster_endpoint_public_access           = true
+  enable_cluster_creator_admin_permissions = true
 
   eks_managed_node_groups = {
     default = {
-      instance_types = ["t3.small"] # cheapest viable node for stateful workloads
+      instance_types = ["t3.small"]
       min_size       = 1
       max_size       = 2
       desired_size   = 1
@@ -70,14 +67,58 @@ module "eks" {
 }
 
 # ─────────────────────────────────────────────
+# EBS CSI Driver IAM Role & Addon
+# ─────────────────────────────────────────────
+data "aws_iam_policy_document" "ebs_csi_driver_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${module.eks.oidc_provider}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi_driver" {
+  name               = "${var.eks_cluster_name}-ebs-csi-driver"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_driver_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_driver" {
+  role       = aws_iam_role.ebs_csi_driver.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name             = module.eks.cluster_name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = aws_iam_role.ebs_csi_driver.arn
+
+  depends_on = [module.eks]
+}
+
+# ─────────────────────────────────────────────
 # S3 + DynamoDB for Terraform state backend
-# (bootstrap — only needed on first apply)
 # ─────────────────────────────────────────────
 resource "aws_s3_bucket" "tfstate" {
   bucket = "proj-devops-tfstate"
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 
@@ -108,38 +149,4 @@ resource "aws_dynamodb_table" "tfstate_lock" {
     name = "LockID"
     type = "S"
   }
-}
-
-# ─────────────────────────────────────────────
-# Kubernetes provider — uses EKS cluster
-# ─────────────────────────────────────────────
-provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
-  }
-}
-
-# ─────────────────────────────────────────────
-# k8s-apps module
-# ─────────────────────────────────────────────
-module "k8s_apps" {
-  source = "../modules/k8s-apps"
-
-  namespace          = "default"
-  dockerhub_username = var.dockerhub_username
-  image_tag          = var.image_tag
-  storage_class      = "gp2"
-
-  app_key                = var.app_key
-  jwt_secret             = var.jwt_secret
-  gateway_db_password    = var.gateway_db_password
-  abonnement_db_password = var.abonnement_db_password
-  mysql_root_password    = var.mysql_root_password
-
-  depends_on = [module.eks]
 }

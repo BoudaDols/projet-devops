@@ -102,6 +102,8 @@ resource "kubernetes_deployment" "abonnement" {
     }
   }
 
+  wait_for_rollout = false
+
   depends_on = [
     kubernetes_deployment.abonnement_mysql,
     kubernetes_secret.abonnement,

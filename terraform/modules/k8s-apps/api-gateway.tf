@@ -83,6 +83,8 @@ resource "kubernetes_deployment" "api_gateway" {
     kubernetes_secret.api_gateway,
     kubernetes_config_map.api_gateway,
   ]
+
+  wait_for_rollout = false
 }
 
 resource "kubernetes_service" "api_gateway" {
