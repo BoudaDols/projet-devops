@@ -56,9 +56,24 @@ module "eks" {
   cluster_endpoint_public_access           = true
   enable_cluster_creator_admin_permissions = true
 
+  # Allow additional IAM users/roles to access the cluster
+  access_entries = {
+    github_actions = {
+      principal_arn = var.github_actions_role_arn
+      policy_associations = {
+        admin = {
+          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = {
+            type = "cluster"
+          }
+        }
+      }
+    }
+  }
+
   eks_managed_node_groups = {
     default = {
-      instance_types = ["t3.small"]
+      instance_types = ["t3.medium"]
       min_size       = 1
       max_size       = 2
       desired_size   = 1

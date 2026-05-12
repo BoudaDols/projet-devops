@@ -50,3 +50,8 @@ variable "mysql_root_password" {
   type        = string
   sensitive   = true
 }
+
+variable "github_actions_role_arn" {
+  description = "IAM user/role ARN for GitHub Actions to access EKS"
+  type        = string
+}
