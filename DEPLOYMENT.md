@@ -24,8 +24,9 @@ Proj-devops/                        # Infrastructure repo
 │   ├── modules/
 │   │   ├── k8s-apps/               # Shared Kubernetes resources
 │   │   └── registry/               # ECR (AWS) or ACR (Azure)
-│   ├── aws/                        # AWS-specific infrastructure
-│   └── azure/                      # Azure-specific infrastructure
+│   ├── aws/                        # AWS infrastructure (VPC, EKS, S3, DynamoDB)
+│   ├── aws-k8s/                    # AWS Kubernetes resources (deployments, services, secrets)
+│   └── azure/                      # Azure infrastructure (VNet, AKS)
 ├── abonnement/                     # abonnement app + k8s manifests
 │   └── .github/workflows/
 │       ├── ci.yml                  # lint, tests, build & push to DockerHub
@@ -54,26 +55,29 @@ Each service runs its own MySQL instance inside the cluster as a Kubernetes Depl
 ### 4. api-gateway is the single entry point
 All external traffic enters through `api-gateway`. On local it is exposed via `NodePort 30080`. On AWS and Azure it is exposed via a cloud `LoadBalancer` service.
 
-### 5. Terraform manages infrastructure, not app deploys
-Terraform provisions and manages cloud infrastructure (VPC/VNet, EKS/AKS, node groups, Kubernetes resources). App deployments (image updates) are handled by each app's own CD workflow using `kubectl set image` and `kubectl rollout restart`. This keeps infrastructure changes and application releases decoupled.
+### 5. Terraform split into two stages (AWS)
+AWS infrastructure (VPC, EKS) and Kubernetes resources (deployments, secrets, services) are managed in two separate Terraform roots — `aws/` and `aws-k8s/`. This prevents the Kubernetes provider from timing out while the EKS cluster is still initializing.
 
-### 6. Terraform state backends
+### 6. Terraform manages infrastructure, not app deploys
+Terraform provisions and manages cloud infrastructure. App deployments (image updates) are handled by each app's own CD workflow using `kubectl set image`. This keeps infrastructure changes and application releases decoupled.
+
+### 7. Terraform state backends
 - **AWS:** S3 bucket with versioning and AES256 encryption + DynamoDB table for state locking
 - **Azure:** Azure Blob Storage (pre-existing)
 
-### 7. AWS — t3.small node group
+### 8. AWS — t3.small node group
 EKS uses a single `t3.small` managed node group instead of Fargate. Fargate does not support EBS (gp2) persistent volumes, which are required for MySQL. A single node keeps costs minimal (~$15/month) while supporting stateful workloads.
 
-### 8. Azure — mixed node pools
+### 9. Azure — mixed node pools
 AKS uses a `Standard_B2s` system node pool for stable stateful workloads (MySQL) and a spot node pool for app pods (api-gateway, abonnement). Spot nodes are up to 90% cheaper but can be evicted — acceptable for stateless app pods, not for databases.
 
-### 9. Secrets management
+### 10. Secrets management
 Secrets are never hardcoded. They flow as:
 - **Local:** manually applied via `kubectl create secret` or `deploy-local.sh`
 - **CI/CD:** GitHub Actions secrets → `TF_VAR_*` env vars → Terraform `kubernetes_secret` resources
 - **App CD:** GitHub Actions secrets → `kubectl create secret --dry-run | kubectl apply`
 
-### 10. Kafka (future)
+### 11. Kafka (future)
 When Kafka is added, a dedicated network policy will be applied to the Kafka broker pod allowing only service pods to produce/consume on port 9092. The gateway will not be involved in Kafka traffic — it handles only synchronous HTTP.
 
 ---
@@ -136,9 +140,7 @@ When Kafka is added, a dedicated network policy will be applied to the Kafka bro
 
 ---
 
-## How to Deploy
-
-### Prerequisites
+## Prerequisites
 
 - Docker Desktop with Kubernetes enabled
 - `kubectl` installed and context set to `docker-desktop`
@@ -148,6 +150,8 @@ When Kafka is added, a dedicated network policy will be applied to the Kafka bro
 - DockerHub account with repositories created for `api-gateway` and `abonnement`
 
 ---
+
+## How to Deploy
 
 ### 1. Local Kubernetes
 
@@ -166,42 +170,66 @@ This script:
 
 ### 2. AWS (first time)
 
-**Step 1 — Bootstrap the S3 backend**
-
-The S3 bucket and DynamoDB table are defined in `terraform/aws/main.tf` but the backend config in `backend.tf` references them. On first apply, comment out `backend.tf`, apply to create the resources, then uncomment and run `terraform init` to migrate state.
+**Step 1 — Create tfvars**
 
 ```bash
 cd terraform/aws
 cp terraform.tfvars.example terraform.tfvars
 # Fill in terraform.tfvars with real values
-
-# First apply — local backend
-terraform init
-terraform apply -target=aws_s3_bucket.tfstate -target=aws_dynamodb_table.tfstate_lock
-
-# Migrate to S3 backend
-# Uncomment backend.tf, then:
-terraform init -migrate-state
-terraform apply
 ```
 
-**Step 2 — Update kubeconfig**
+**Step 2 — Bootstrap the S3 backend**
+
+The S3 bucket and DynamoDB table must exist before the backend can be used.
+Comment out `backend.tf`, apply to create them, then re-enable and migrate state.
+
+```bash
+# Comment out backend.tf, then:
+terraform init -reconfigure
+terraform apply \
+  -target=aws_s3_bucket.tfstate \
+  -target=aws_s3_bucket_versioning.tfstate \
+  -target=aws_s3_bucket_server_side_encryption_configuration.tfstate \
+  -target=aws_dynamodb_table.tfstate_lock \
+  -lock=false
+
+# Uncomment backend.tf, then migrate state to S3:
+terraform init -migrate-state
+# Answer "yes" when prompted
+```
+
+**Step 3 — Apply full infrastructure**
+
+```bash
+terraform apply
+# Creates VPC, EKS cluster, node group
+```
+
+**Step 4 — Wait for cluster to be ready**
 
 ```bash
 aws eks update-kubeconfig --region us-east-1 --name proj-devops-eks
+kubectl get nodes
+# Wait until status shows "Ready"
 ```
 
-**Step 3 — Subsequent deploys**
+**Step 5 — Apply Kubernetes resources**
 
-Push to `main` in the infra repo with changes under `terraform/` — the `infra.yml` workflow handles it automatically.
+```bash
+cd ../aws-k8s
+cp ../aws/terraform.tfvars.example terraform.tfvars
+# Fill in terraform.tfvars (no eks_cluster_name needed here)
+
+terraform init
+./import.sh     # only needed if resources already exist in the cluster
+terraform apply
+```
 
 ---
 
 ### 3. Azure (first time)
 
 **Step 1 — Ensure blob backend exists**
-
-The Azure Blob Storage backend must exist before running `terraform init`. Create it manually or via Azure CLI:
 
 ```bash
 az group create --name proj-devops-tfstate-rg --location eastus2
@@ -227,10 +255,6 @@ terraform apply
 az aks get-credentials --resource-group proj-devops-rg --name proj-devops-aks
 ```
 
-**Step 4 — Subsequent deploys**
-
-Push to `main` in the infra repo with changes under `terraform/` — the `infra.yml` workflow handles it automatically.
-
 ---
 
 ### 4. App deployments (all environments)
@@ -241,6 +265,59 @@ App deployments are fully automated. Push to `main` in either app repo:
 2. On CI success, CD triggers and deploys to local, AWS, and Azure simultaneously
 3. Each deploy uses `kubectl set image` to update the image tag to the commit SHA
 4. Rollout status is monitored — workflow fails if the rollout does not complete within 120s
+
+---
+
+## How to Destroy
+
+### Local Kubernetes
+
+```bash
+kubectl delete deployment abonnement api-gateway api-gateway-mysql mysql -n default
+kubectl delete service abonnement api-gateway-service api-gateway-mysql-service mysql -n default
+kubectl delete pvc --all -n default
+kubectl delete secret api-gateway-secret abonnement-secrets mysql-secrets -n default
+kubectl delete configmap api-gateway-config abonnement-config -n default
+```
+
+### AWS — Kubernetes resources only
+
+Destroys deployments, services, secrets, PVCs and network policies. Leaves EKS and VPC intact.
+
+```bash
+cd terraform/aws-k8s
+terraform destroy
+```
+
+### AWS — Full infrastructure (EKS + VPC)
+
+Run after destroying Kubernetes resources.
+
+```bash
+cd terraform/aws
+terraform destroy
+```
+
+> The S3 bucket and DynamoDB table have `prevent_destroy = true`. To destroy them too:
+> 1. Remove the `lifecycle { prevent_destroy = true }` block from `aws/main.tf`
+> 2. Migrate state back to local: `terraform init -migrate-state`
+> 3. Run `terraform destroy`
+
+### Azure — Full infrastructure
+
+Destroys AKS cluster, node pools, VNet, resource group and all Kubernetes resources.
+
+```bash
+cd terraform/azure
+terraform destroy
+```
+
+> The Azure Blob Storage backend is not managed by Terraform. Delete it manually if needed:
+> ```bash
+> az storage container delete --name tfstate --account-name projdevopstfstate
+> az storage account delete --name projdevopstfstate --resource-group proj-devops-tfstate-rg --yes
+> az group delete --name proj-devops-tfstate-rg --yes
+> ```
 
 ---
 
@@ -266,6 +343,7 @@ Infra push to main (terraform/** files)
    tf-static-analysis (fmt + validate + tfsec) — on every push/PR
       │
    infra.yml (terraform apply)
-      ├── deploy-aws   (S3 backend)
-      └── deploy-azure (Azure Blob backend)
+      ├── deploy-aws        (terraform/aws  → VPC + EKS)
+      ├── deploy-aws-k8s    (terraform/aws-k8s → k8s resources)
+      └── deploy-azure      (terraform/azure → VNet + AKS + k8s resources)
 ```
