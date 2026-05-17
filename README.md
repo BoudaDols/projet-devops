@@ -1,6 +1,6 @@
 # Proj-devops — Infrastructure & DevOps
 
-Infrastructure repository for a PHP microservices platform. Manages Kubernetes deployments, Terraform infrastructure for AWS and Azure, CI/CD pipelines, and local development environment.
+Infrastructure repository for a PHP/Go microservices platform. Manages Kubernetes deployments, Terraform infrastructure for AWS and Azure, CI/CD pipelines, and local development environment.
 
 ---
 
@@ -9,30 +9,60 @@ Infrastructure repository for a PHP microservices platform. Manages Kubernetes d
 | Service | Technology | Role |
 |---|---|---|
 | `api-gateway` | Laravel 12 / PHP 8.2 | Security gateway, reverse proxy, JWT auth, session management, load balancer |
-| `abonnement` | PHP 8.4 | Subscription management service — internal only |
+| `abonnement` | PHP 8.4 | Subscription management — internal only |
+| `user-service` | Go 1.22 / Gin | User profiles, preferences, activity history — internal only |
 
-All external traffic enters through `api-gateway`. The `abonnement` service is never exposed directly — it is only reachable from within the cluster by the gateway.
+All external traffic enters through `api-gateway`. Internal services are never exposed directly — they are only reachable from within the cluster via the gateway.
 
 ---
 
 ## Architecture
 
 ```
-Internet
-   │
-   ▼
-api-gateway (LoadBalancer :80)
-   │  JWT auth + rate limiting + request logging
-   │  forwards to → SERVICE_*_URL
-   │
-   ▼
-abonnement (ClusterIP — internal only)
-   │
-   ▼
-MySQL (per service — no shared DB)
+                          Internet
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │   api-gateway   │  LoadBalancer :80
+                    │  Laravel / PHP  │  JWT auth + rate limiting
+                    │                 │  request logging + CORS
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │ HTTP (sync)  │              │ HTTP (sync)
+              ▼              │              ▼
+   ┌──────────────────┐      │   ┌──────────────────────┐
+   │   abonnement     │      │   │    user-service       │
+   │   PHP 8.4        │      │   │    Go / Gin           │
+   │   ClusterIP      │      │   │    ClusterIP          │
+   └────────┬─────────┘      │   └──────────┬────────────┘
+            │                │              │
+            ▼                │              ▼
+       MySQL 8.0             │         MySQL 8.0
+       (abonnement)          │         (user_service)
+                             │
+              ┌──────────────┘
+              │ Kafka events
+              ▼
+   ┌──────────────────┐
+   │     Kafka        │  apache/kafka:3.7.0
+   │     KRaft mode   │  ClusterIP :9092
+   └──────────────────┘
+              │
+    ┌─────────┴──────────┐
+    │ user.registered     │  → user-service creates profile
+    │ subscription.changed│  → user-service logs activity
+    │ user.profile_updated│  → future: notification-service
+    └─────────────────────┘
+
+   api-gateway MySQL 8.0
+   (api_gateway DB — auth, sessions, cache, queue)
 ```
 
-Each service owns its own MySQL instance running inside the cluster. No shared database. Inter-service communication is currently synchronous HTTP via the gateway. Kafka is planned for future async communication.
+**Communication patterns:**
+- Synchronous HTTP — client → gateway → service (via `SERVICE_*_URL` auto-discovery)
+- Asynchronous Kafka — services publish/consume events independently of the gateway
+- All services ClusterIP — network policies enforce strict pod-to-pod access
 
 ---
 
@@ -46,11 +76,13 @@ Proj-devops/
 │       └── infra.yml                # Terraform apply — triggers on terraform/** changes
 ├── terraform/
 │   ├── modules/
-│   │   ├── k8s-apps/                # Shared k8s resources (deployments, services, secrets, network policies)
+│   │   ├── k8s-apps/                # Shared k8s resources (all services, Kafka, network policies)
 │   │   └── registry/                # ECR (AWS) or ACR (Azure)
 │   ├── aws/                         # Stage 1 — VPC + EKS + S3/DynamoDB backend
 │   ├── aws-k8s/                     # Stage 2 — Kubernetes resources on EKS
 │   └── azure/                       # AKS + VNet + k8s resources
+├── kafka/
+│   └── k8s/local/                   # Kafka local Kubernetes manifests
 ├── abonnement/                      # abonnement service (submodule / sibling repo)
 │   ├── k8s/local/                   # Local Kubernetes manifests
 │   └── .github/workflows/
@@ -60,6 +92,11 @@ Proj-devops/
 │   ├── k8s/local/                   # Local Kubernetes manifests
 │   └── .github/workflows/
 │       ├── ci.yml                   # Lint + static analysis + tests + Docker build
+│       └── cd.yml                   # Deploy to local + AWS + Azure
+├── user-service/                    # user-service (Go)
+│   ├── k8s/local/                   # Local Kubernetes manifests
+│   └── .github/workflows/
+│       ├── ci.yml                   # Lint + tests + Docker build
 │       └── cd.yml                   # Deploy to local + AWS + Azure
 ├── deploy-local.sh                  # One-command local deployment
 ├── DEPLOYMENT.md                    # Architecture decisions + full deploy/destroy guide
@@ -72,7 +109,7 @@ Proj-devops/
 
 | Environment | Cluster | Exposed at | Infrastructure |
 |---|---|---|---|
-| Local | Docker Desktop | `http://localhost:30080` | `deploy-local.sh` |
+| Local | Docker Desktop | `kubectl port-forward svc/api-gateway-service 8080:80` | `deploy-local.sh` |
 | AWS | EKS (us-east-1) | LoadBalancer DNS | Terraform `aws/` + `aws-k8s/` |
 | Azure | AKS (eastus2) | LoadBalancer IP | Terraform `azure/` |
 
@@ -83,6 +120,7 @@ Proj-devops/
 | Feature | Status |
 |---|---|
 | JWT authentication (HMAC-SHA256) | ✅ |
+| User UUID in JWT payload | ✅ |
 | User registration & login | ✅ |
 | Token refresh | ✅ |
 | Token blacklist (logout) | ✅ |
@@ -93,6 +131,7 @@ Proj-devops/
 | Structured JSON request logging (stdout) | ✅ |
 | Phone + OTP authentication (V2) | ✅ |
 | Admin role management | ✅ |
+| X-User-ID header forwarding to services | ✅ |
 
 ### Service Proxy
 
@@ -103,25 +142,44 @@ GET /api/services/abonnement/plans
 Authorization: Bearer <jwt>
 
 → forwards to SERVICE_ABONNEMENT_URL/plans
-  with headers: X-User-Email, X-User-Name, X-User-Role
+  with headers: X-User-ID, X-User-Email, X-User-Name, X-User-Role
+
+GET /api/services/user/profiles/<uuid>
+Authorization: Bearer <jwt>
+
+→ forwards to SERVICE_USER_URL/profiles/<uuid>
+  with headers: X-User-ID, X-User-Email, X-User-Name, X-User-Role
 ```
+
+---
+
+## user-service Features
+
+| Feature | Status |
+|---|---|
+| Profile CRUD (display name, avatar, bio, language, timezone) | ✅ |
+| Generic key/value preferences | ✅ |
+| Activity history (profile updates, preferences, subscriptions, API requests) | ✅ |
+| Kafka consumer — `user.registered` → auto-create profile | ✅ |
+| Kafka consumer — `subscription.changed` → log activity | ✅ |
+| Kafka producer — `user.profile_updated`, `user.preferences_updated` | ✅ |
+| DB migrations on startup | ✅ |
 
 ---
 
 ## CI/CD Pipeline
 
-### App repositories (api-gateway, abonnement)
+### App repositories (api-gateway, abonnement, user-service)
 
 ```
 push to any branch
       │
       ▼
    CI workflow
-   ├── Lint (PHPCS / Pint)
-   ├── Static analysis (PHPStan)
-   ├── Security scan (Semgrep)
-   ├── Dependency audit (composer audit / npm audit)
-   ├── Tests (PHPUnit)
+   ├── Lint
+   ├── Static analysis
+   ├── Security scan (Semgrep / Trivy)
+   ├── Tests
    └── Build & push to DockerHub (main branch only)
             │
             │ on CI success (main only)
@@ -179,11 +237,16 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 |---|---|
 | `api-gateway` Deployment | 1 replica, liveness + readiness probes |
 | `abonnement` Deployment | 1 replica, init container runs migrations |
+| `user-service` Deployment | 1 replica, runs DB migrations on startup |
+| `kafka` Deployment | apache/kafka:3.7.0, KRaft mode, 2Gi PVC |
 | `api-gateway-mysql` Deployment | MySQL 8.0, 1Gi PVC |
-| `mysql` Deployment | MySQL 8.0, 5Gi PVC |
-| `api-gateway-service` | LoadBalancer (cloud) / NodePort 30080 (local) |
+| `mysql` Deployment | MySQL 8.0, 5Gi PVC (abonnement) |
+| `user-service-mysql` Deployment | MySQL 8.0, 1Gi PVC |
+| `api-gateway-service` | LoadBalancer (cloud) / port-forward (local) |
 | `abonnement` Service | ClusterIP — internal only |
-| Network policies | Only `api-gateway` pods can reach `abonnement` on port 8080 |
+| `user-service` Service | ClusterIP — internal only |
+| `kafka` Service | ClusterIP — internal only |
+| Network policies | Strict pod-to-pod access control |
 | `api-gateway-migrations` Job | Runs `php artisan migrate --force` on deploy |
 
 ---
@@ -191,9 +254,11 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 ## Security
 
 - JWT tokens signed with HMAC-SHA256, validated on every request
+- UUID-based user identity — non-enumerable, forwarded as `X-User-ID` to all services
 - Token blacklist prevents use of logged-out tokens
-- `abonnement` is ClusterIP only — unreachable from outside the cluster
-- Network policies enforce that only `api-gateway` pods can reach `abonnement`
+- All internal services are ClusterIP only — unreachable from outside the cluster
+- Network policies enforce strict pod-to-pod access (only gateway can reach internal services)
+- Kafka network policy — only service pods can produce/consume on port 9092
 - Secrets never hardcoded — injected at runtime via GitHub Actions secrets → Kubernetes secrets
 - Rate limiting on all auth endpoints
 - Semgrep SAST scanning on every push
@@ -209,6 +274,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 - Docker Desktop with Kubernetes enabled
 - `kubectl`
 - `terraform` >= 1.7.0
+- `go` >= 1.22
 - AWS CLI
 - Azure CLI
 
@@ -219,9 +285,11 @@ git clone <this-repo>
 cd Proj-devops
 
 ./deploy-local.sh
-```
 
-Gateway available at `http://localhost:30080`
+# Access the gateway
+kubectl port-forward svc/api-gateway-service 8080:80 -n default
+# → http://localhost:8080
+```
 
 ### AWS deployment
 
@@ -292,6 +360,18 @@ terraform apply
 | `AZURE_CREDENTIALS` | Azure service principal JSON |
 | `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
 
+### user-service repo
+
+| Secret | Description |
+|---|---|
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | DockerHub credentials |
+| `DB_PASSWORD` | user-service MySQL root password |
+| `KUBECONFIG_LOCAL` | Local cluster kubeconfig |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | AWS credentials |
+| `EKS_CLUSTER_NAME` | EKS cluster name |
+| `AZURE_CREDENTIALS` | Azure service principal JSON |
+| `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
+
 ### Proj-devops (infra repo)
 
 | Secret | Description |
@@ -301,7 +381,9 @@ terraform apply
 | `AZURE_CREDENTIALS` | Azure service principal JSON |
 | `TF_BACKEND_AZURE_RG` / `TF_BACKEND_AZURE_SA` / `TF_BACKEND_AZURE_CONTAINER` | Azure backend config |
 | `APP_KEY` / `JWT_SECRET` | api-gateway secrets |
-| `DB_PASSWORD_GATEWAY` / `DB_PASSWORD_ABONNEMENT` / `MYSQL_ROOT_PASSWORD` | Database passwords |
+| `DB_PASSWORD_GATEWAY` | api-gateway MySQL root password |
+| `DB_PASSWORD_ABONNEMENT` / `MYSQL_ROOT_PASSWORD` | abonnement DB passwords |
+| `DB_PASSWORD_USER_SERVICE` | user-service MySQL root password |
 | `DOCKERHUB_USERNAME` | DockerHub username |
 
 ---
@@ -318,6 +400,8 @@ terraform apply
 ## Roadmap
 
 - [ ] Azure deployment (pending Azure AD service principal)
-- [ ] Kafka for async inter-service communication
+- [ ] Kafka external access for local monitoring/debugging
+- [ ] notification-service (consumes Kafka events — email, SMS, push)
+- [ ] payment-service (Stripe/PayPal — works alongside abonnement)
 - [ ] Prometheus + Grafana observability stack
-- [ ] Additional microservices
+- [ ] Redis (replace DB-backed cache, session, queue in api-gateway)

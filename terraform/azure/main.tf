@@ -114,6 +114,7 @@ module "k8s_apps" {
   gateway_db_password    = var.gateway_db_password
   abonnement_db_password = var.abonnement_db_password
   mysql_root_password    = var.mysql_root_password
+  user_service_db_password = var.user_service_db_password
 
   depends_on = [azurerm_kubernetes_cluster.this]
 }

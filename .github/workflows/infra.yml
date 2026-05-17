@@ -47,6 +47,7 @@ jobs:
           TF_VAR_abonnement_db_password: ${{ secrets.DB_PASSWORD_ABONNEMENT }}
           TF_VAR_mysql_root_password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          TF_VAR_user_service_db_password: ${{ secrets.DB_PASSWORD_USER_SERVICE }}
         run: terraform apply -auto-approve
 
       - name: Terraform Init (k8s apps)
@@ -62,6 +63,7 @@ jobs:
           TF_VAR_abonnement_db_password: ${{ secrets.DB_PASSWORD_ABONNEMENT }}
           TF_VAR_mysql_root_password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          TF_VAR_user_service_db_password: ${{ secrets.DB_PASSWORD_USER_SERVICE }}
         run: terraform apply -auto-approve
 
   # ─────────────────────────────────────────────
@@ -111,4 +113,5 @@ jobs:
           TF_VAR_abonnement_db_password: ${{ secrets.DB_PASSWORD_ABONNEMENT }}
           TF_VAR_mysql_root_password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          TF_VAR_user_service_db_password: ${{ secrets.DB_PASSWORD_USER_SERVICE }}
         run: terraform apply -auto-approve

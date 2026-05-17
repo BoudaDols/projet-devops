@@ -10,9 +10,6 @@ echo "==> Deploying Kafka infrastructure..."
 kubectl apply -f kafka/k8s/local/kafka.yaml
 kubectl apply -f kafka/k8s/local/network-policy.yaml
 
-echo "==> Waiting for Zookeeper to be ready..."
-kubectl rollout status deployment/zookeeper --timeout=120s
-
 echo "==> Waiting for Kafka to be ready..."
 kubectl rollout status deployment/kafka --timeout=120s
 
@@ -43,7 +40,7 @@ kubectl apply -f api-gateway/k8s/local/deployment.yaml
 echo "==> Running api-gateway migrations..."
 kubectl delete pod migrations --ignore-not-found
 kubectl apply -f api-gateway/k8s/migrations.yaml
-kubectl wait --for=condition=complete pod/migrations --timeout=120s
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/migrations --timeout=120s
 
 echo "==> Deploying user-service dependencies..."
 kubectl apply -f user-service/k8s/local/secret.yaml

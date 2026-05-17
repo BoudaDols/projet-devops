@@ -51,3 +51,10 @@ variable "mysql_root_password" {
   type        = string
   sensitive   = true
 }
+
+# user-service secrets
+variable "user_service_db_password" {
+  description = "user-service MySQL root password"
+  type        = string
+  sensitive   = true
+}
