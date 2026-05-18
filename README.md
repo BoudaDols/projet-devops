@@ -11,6 +11,7 @@ Infrastructure repository for a PHP/Go microservices platform. Manages Kubernete
 | `api-gateway` | Laravel 12 / PHP 8.2 | Security gateway, reverse proxy, JWT auth, session management, load balancer |
 | `abonnement` | PHP 8.4 | Subscription management — internal only |
 | `user-service` | Go 1.22 / Gin | User profiles, preferences, activity history — internal only |
+| `notification-service` | Python 3.12 / Flask | Event-driven email notifications — internal only |
 
 All external traffic enters through `api-gateway`. Internal services are never exposed directly — they are only reachable from within the cluster via the gateway.
 
@@ -49,11 +50,27 @@ All external traffic enters through `api-gateway`. Internal services are never e
    │     KRaft mode   │  ClusterIP :9092
    └──────────────────┘
               │
-    ┌─────────┴──────────┐
-    │ user.registered     │  → user-service creates profile
-    │ subscription.changed│  → user-service logs activity
-    │ user.profile_updated│  → future: notification-service
-    └─────────────────────┘
+    ┌─────────┴────────────────────┐
+    │ user.registered               │  → user-service creates profile
+    │ subscription.changed          │  → user-service logs activity
+    │                               │  → notification-service sends email
+    │ payment.succeeded             │  → notification-service sends receipt
+    │ payment.failed                │  → notification-service sends alert
+    │ user.profile_updated          │  → future: notification-service
+    └───────────────────────────────┘
+              │
+              ▼
+   ┌──────────────────────┐
+   │  notification-service │  Python 3.12 / Flask
+   │  Kafka consumer       │  ClusterIP :5000
+   │  SMTP email sender    │  No database
+   └──────────────────────┘
+              │
+              ▼
+         SMTP (Mailtrap)
+              │
+              ▼
+         User inbox
 
    api-gateway MySQL 8.0
    (api_gateway DB — auth, sessions, cache, queue)
@@ -93,6 +110,12 @@ Proj-devops/
 │   └── .github/workflows/
 │       ├── ci.yml                   # Lint + static analysis + tests + Docker build
 │       └── cd.yml                   # Deploy to local + AWS + Azure
+├── notification-service/            # notification-service (Python/Flask)
+│   ├── k8s/                         # Production Kubernetes manifests
+│   ├── k8s/local/                   # Local Kubernetes manifests
+│   └── .github/workflows/
+│       ├── ci.yml                   # Lint (flake8) + tests (pytest)
+│       └── cd.yml                   # Build + deploy to local + AWS + Azure
 ├── user-service/                    # user-service (Go)
 │   ├── k8s/local/                   # Local Kubernetes manifests
 │   └── .github/workflows/
@@ -167,9 +190,25 @@ Authorization: Bearer <jwt>
 
 ---
 
+## notification-service Features
+
+| Feature | Status |
+|---|---|
+| Kafka consumer — `subscription.changed` → subscription confirmation email | ✅ |
+| Kafka consumer — `subscription.changed` → cancellation email | ✅ |
+| Kafka consumer — `payment.succeeded` → payment receipt email | ✅ |
+| Kafka consumer — `payment.failed` → payment failure alert email | ✅ |
+| SMTP email sending via smtplib (Mailtrap) | ✅ |
+| Plain-text email templates per event type | ✅ |
+| Fallback recipient when `user_email` absent from event | ✅ |
+| `/health` endpoint for Kubernetes probes | ✅ |
+| Fault-tolerant — SMTP/Kafka errors never crash the consumer loop | ✅ |
+
+---
+
 ## CI/CD Pipeline
 
-### App repositories (api-gateway, abonnement, user-service)
+### App repositories (api-gateway, abonnement, user-service, notification-service)
 
 ```
 push to any branch
@@ -178,7 +217,6 @@ push to any branch
    CI workflow
    ├── Lint
    ├── Static analysis
-   ├── Security scan (Semgrep / Trivy)
    ├── Tests
    └── Build & push to DockerHub (main branch only)
             │
@@ -235,6 +273,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 
 | Resource | Description |
 |---|---|
+| `notification-service` Deployment | 1 replica, Kafka consumer thread + Flask /health |
 | `api-gateway` Deployment | 1 replica, liveness + readiness probes |
 | `abonnement` Deployment | 1 replica, init container runs migrations |
 | `user-service` Deployment | 1 replica, runs DB migrations on startup |
@@ -244,6 +283,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 | `user-service-mysql` Deployment | MySQL 8.0, 1Gi PVC |
 | `api-gateway-service` | LoadBalancer (cloud) / port-forward (local) |
 | `abonnement` Service | ClusterIP — internal only |
+| `notification-service` Service | ClusterIP — internal only (health probe only) |
 | `user-service` Service | ClusterIP — internal only |
 | `kafka` Service | ClusterIP — internal only |
 | Network policies | Strict pod-to-pod access control |
@@ -259,6 +299,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 - All internal services are ClusterIP only — unreachable from outside the cluster
 - Network policies enforce strict pod-to-pod access (only gateway can reach internal services)
 - Kafka network policy — only service pods can produce/consume on port 9092
+- notification-service network policy — only egress to Kafka (9092) and SMTP (2525/587/465)
 - Secrets never hardcoded — injected at runtime via GitHub Actions secrets → Kubernetes secrets
 - Rate limiting on all auth endpoints
 - Semgrep SAST scanning on every push
@@ -360,6 +401,20 @@ terraform apply
 | `AZURE_CREDENTIALS` | Azure service principal JSON |
 | `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
 
+### notification-service repo
+
+| Secret | Description |
+|---|---|
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | DockerHub credentials |
+| `SMTP_USER` | Mailtrap SMTP username |
+| `SMTP_PASS` | Mailtrap SMTP password |
+| `DEFAULT_RECIPIENT` | Fallback recipient email |
+| `KUBECONFIG_LOCAL` | Local cluster kubeconfig |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | AWS credentials |
+| `EKS_CLUSTER_NAME` | EKS cluster name |
+| `AZURE_CREDENTIALS` | Azure service principal JSON |
+| `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
+
 ### user-service repo
 
 | Secret | Description |
@@ -401,7 +456,7 @@ terraform apply
 
 - [ ] Azure deployment (pending Azure AD service principal)
 - [ ] Kafka external access for local monitoring/debugging
-- [ ] notification-service (consumes Kafka events — email, SMS, push)
+- [x] notification-service (consumes Kafka events — email via SMTP)
 - [ ] payment-service (Stripe/PayPal — works alongside abonnement)
 - [ ] Prometheus + Grafana observability stack
 - [ ] Redis (replace DB-backed cache, session, queue in api-gateway)

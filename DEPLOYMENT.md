@@ -2,13 +2,14 @@
 
 ## Architecture Overview
 
-This project is a PHP/Go microservices platform composed of three services:
+This project is a PHP/Go/Python microservices platform composed of four services:
 
 - `api-gateway` — Laravel app. Security gateway, reverse proxy, JWT auth, session management. All external requests go through it.
 - `abonnement` — PHP app. Subscription management. Internal only.
 - `user-service` — Go app. User profiles, preferences, activity history. Internal only.
+- `notification-service` — Python/Flask app. Event-driven email notifications. Kafka consumer only. Internal only.
 
-Each service owns its own MySQL database. No shared database. Synchronous communication is HTTP via the gateway. Asynchronous communication uses Kafka.
+Each service owns its own MySQL database (except `notification-service` which has no database). No shared database. Synchronous communication is HTTP via the gateway. Asynchronous communication uses Kafka.
 
 ---
 
@@ -27,6 +28,12 @@ Proj-devops/                        # Infrastructure repo
 │   ├── aws-k8s/                    # AWS Kubernetes resources
 │   └── azure/                      # Azure infrastructure (VNet, AKS)
 ├── kafka/k8s/local/                # Kafka local Kubernetes manifests
+├── notification-service/               # notification-service (Python/Flask)
+│   ├── k8s/                            # Production Kubernetes manifests
+│   ├── k8s/local/                      # Local Kubernetes manifests
+│   └── .github/workflows/
+│       ├── ci.yml                      # Lint (flake8) + tests (pytest)
+│       └── cd.yml                      # Build + deploy to local + AWS + Azure
 ├── abonnement/                     # abonnement app + k8s manifests
 ├── api-gateway/                    # api-gateway app + k8s manifests
 └── user-service/                   # user-service (Go) + k8s manifests
@@ -84,6 +91,9 @@ Docker Desktop's new kind-based Kubernetes (`desktop-control-plane`) does not fo
 kubectl port-forward svc/api-gateway-service 8080:80 -n default
 ```
 
+### 14. notification-service is stateless and Kafka-only
+`notification-service` has no database and no inbound HTTP traffic from other services. It only consumes Kafka events and sends emails via SMTP. This keeps it completely decoupled — it can be stopped, restarted, or scaled without affecting any other service. Kafka retains unprocessed messages so no events are lost during downtime.
+
 ---
 
 ## GitHub Secrets Reference
@@ -115,6 +125,20 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 | `AZURE_CREDENTIALS` | Azure service principal JSON |
 | `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
 
+### notification-service repo
+
+| Secret | Description |
+|---|---|
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | DockerHub credentials |
+| `SMTP_USER` | Mailtrap SMTP username |
+| `SMTP_PASS` | Mailtrap SMTP password |
+| `DEFAULT_RECIPIENT` | Fallback recipient email when not in event payload |
+| `KUBECONFIG_LOCAL` | kubeconfig for local cluster |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | AWS credentials |
+| `EKS_CLUSTER_NAME` | EKS cluster name |
+| `AZURE_CREDENTIALS` | Azure service principal JSON |
+| `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
+
 ### user-service repo
 
 | Secret | Description |
@@ -139,6 +163,8 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 | `DB_PASSWORD_GATEWAY` | api-gateway MySQL root password |
 | `DB_PASSWORD_ABONNEMENT` / `MYSQL_ROOT_PASSWORD` | abonnement DB passwords |
 | `DB_PASSWORD_USER_SERVICE` | user-service MySQL root password |
+| `SMTP_USER` / `SMTP_PASS` | notification-service Mailtrap credentials |
+| `DEFAULT_RECIPIENT` | notification-service fallback recipient email |
 | `DOCKERHUB_USERNAME` | DockerHub username |
 
 ---
@@ -151,7 +177,8 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 - `go` >= 1.22
 - AWS CLI configured with appropriate permissions
 - Azure CLI logged in (`az login`)
-- DockerHub account with repositories for `api-gateway`, `abonnement`, `user-service`
+- DockerHub account with repositories for `api-gateway`, `abonnement`, `user-service`, `notification-service`
+- Python 3.12+ (for notification-service local development)
 
 ---
 
@@ -169,11 +196,12 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 ```
 
 This script:
-1. Builds Docker images for all three services
+1. Builds Docker images for all four services
 2. Deploys Kafka (KRaft mode)
 3. Deploys abonnement + MySQL
 4. Deploys api-gateway + MySQL + runs migrations
 5. Deploys user-service + MySQL
+6. Deploys notification-service (no database — Kafka consumer + SMTP)
 
 ---
 
@@ -277,14 +305,14 @@ Fully automated on push to `main` in any app repo:
 ```bash
 # All app resources
 kubectl delete deployment abonnement api-gateway api-gateway-mysql mysql \
-  user-service user-service-mysql kafka -n default
+  user-service user-service-mysql notification-service kafka -n default
 kubectl delete service abonnement api-gateway-service api-gateway-mysql-service \
-  mysql user-service user-service-mysql kafka -n default
+  mysql user-service user-service-mysql notification-service kafka -n default
 kubectl delete pvc --all -n default
 kubectl delete secret api-gateway-secret abonnement-secrets mysql-secrets \
-  user-service-secret -n default
+  user-service-secret notification-secrets -n default
 kubectl delete configmap api-gateway-config abonnement-config \
-  user-service-config -n default
+  user-service-config notification-config -n default
 kubectl delete networkpolicy --all -n default
 ```
 
