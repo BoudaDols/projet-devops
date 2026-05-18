@@ -58,3 +58,22 @@ variable "user_service_db_password" {
   type        = string
   sensitive   = true
 }
+
+# notification-service secrets
+variable "smtp_user" {
+  description = "Mailtrap SMTP username"
+  type        = string
+  sensitive   = true
+}
+
+variable "smtp_pass" {
+  description = "Mailtrap SMTP password"
+  type        = string
+  sensitive   = true
+}
+
+variable "default_recipient" {
+  description = "Fallback email recipient when user_email is absent from Kafka event"
+  type        = string
+  sensitive   = true
+}

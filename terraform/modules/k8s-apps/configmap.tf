@@ -34,12 +34,14 @@ resource "kubernetes_config_map" "abonnement" {
   }
 
   data = {
-    APP_ENV        = "prod"
-    APP_DEBUG      = "false"
-    DB_CONNECTION  = "mysql"
-    DB_HOST        = "mysql"
-    DB_PORT        = "3306"
-    DB_DATABASE    = "abonnement"
+    APP_ENV         = "prod"
+    APP_DEBUG       = "false"
+    DB_CONNECTION   = "mysql"
+    DB_HOST         = "mysql"
+    DB_PORT         = "3306"
+    DB_DATABASE     = "abonnement"
     PAYMENT_GATEWAY = "stripe"
+    KAFKA_BROKERS   = "kafka.${var.namespace}.svc.cluster.local:9092"
+    KAFKA_ENABLED   = "true"
   }
 }

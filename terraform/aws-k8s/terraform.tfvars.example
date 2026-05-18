@@ -1,5 +1,4 @@
-azure_location           = "eastus2"
-aks_cluster_name         = "proj-devops-aks"
+aws_region               = "us-east-1"
 dockerhub_username       = "<your-dockerhub-username>"
 image_tag                = "latest"
 app_key                  = "<base64:...>"

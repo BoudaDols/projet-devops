@@ -205,6 +205,13 @@ resource "kubernetes_network_policy" "kafka" {
           }
         }
       }
+      from {
+        pod_selector {
+          match_labels = {
+            app = "notification-service"
+          }
+        }
+      }
 
       ports {
         protocol = "TCP"

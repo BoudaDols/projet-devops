@@ -48,6 +48,9 @@ jobs:
           TF_VAR_mysql_root_password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           TF_VAR_user_service_db_password: ${{ secrets.DB_PASSWORD_USER_SERVICE }}
+          TF_VAR_smtp_user: ${{ secrets.SMTP_USER }}
+          TF_VAR_smtp_pass: ${{ secrets.SMTP_PASS }}
+          TF_VAR_default_recipient: ${{ secrets.DEFAULT_RECIPIENT }}
         run: terraform apply -auto-approve
 
       - name: Terraform Init (k8s apps)
@@ -64,6 +67,9 @@ jobs:
           TF_VAR_mysql_root_password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           TF_VAR_user_service_db_password: ${{ secrets.DB_PASSWORD_USER_SERVICE }}
+          TF_VAR_smtp_user: ${{ secrets.SMTP_USER }}
+          TF_VAR_smtp_pass: ${{ secrets.SMTP_PASS }}
+          TF_VAR_default_recipient: ${{ secrets.DEFAULT_RECIPIENT }}
         run: terraform apply -auto-approve
 
   # ─────────────────────────────────────────────
@@ -114,4 +120,7 @@ jobs:
           TF_VAR_mysql_root_password: ${{ secrets.MYSQL_ROOT_PASSWORD }}
           TF_VAR_dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           TF_VAR_user_service_db_password: ${{ secrets.DB_PASSWORD_USER_SERVICE }}
+          TF_VAR_smtp_user: ${{ secrets.SMTP_USER }}
+          TF_VAR_smtp_pass: ${{ secrets.SMTP_PASS }}
+          TF_VAR_default_recipient: ${{ secrets.DEFAULT_RECIPIENT }}
         run: terraform apply -auto-approve

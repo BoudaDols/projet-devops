@@ -54,10 +54,13 @@ module "k8s_apps" {
   image_tag          = var.image_tag
   storage_class      = "gp2"
 
-  app_key                = var.app_key
-  jwt_secret             = var.jwt_secret
-  gateway_db_password    = var.gateway_db_password
-  abonnement_db_password = var.abonnement_db_password
-  mysql_root_password    = var.mysql_root_password
+  app_key                  = var.app_key
+  jwt_secret               = var.jwt_secret
+  gateway_db_password      = var.gateway_db_password
+  abonnement_db_password   = var.abonnement_db_password
+  mysql_root_password      = var.mysql_root_password
   user_service_db_password = var.user_service_db_password
+  smtp_user                = var.smtp_user
+  smtp_pass                = var.smtp_pass
+  default_recipient        = var.default_recipient
 }
