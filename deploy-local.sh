@@ -39,9 +39,13 @@ echo "==> Deploying api-gateway dependencies..."
 kubectl apply -f api-gateway/k8s/local/secret.yaml
 kubectl apply -f api-gateway/k8s/configmap.yaml
 kubectl apply -f api-gateway/k8s/mysql.yaml
+kubectl apply -f api-gateway/k8s/local/redis.yaml
 
 echo "==> Waiting for api-gateway MySQL to be ready..."
 kubectl rollout status deployment/api-gateway-mysql --timeout=120s
+
+echo "==> Waiting for Redis to be ready..."
+kubectl rollout status deployment/redis --timeout=60s
 
 echo "==> Deploying api-gateway..."
 kubectl apply -f api-gateway/k8s/local/deployment.yaml

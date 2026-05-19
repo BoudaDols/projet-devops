@@ -273,6 +273,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 
 | Resource | Description |
 |---|---|
+| `redis` Deployment | Redis 7 alpine, no persistence — cache/sessions/queue for api-gateway |
 | `notification-service` Deployment | 1 replica, Kafka consumer thread + Flask /health |
 | `api-gateway` Deployment | 1 replica, liveness + readiness probes |
 | `abonnement` Deployment | 1 replica, init container runs migrations |
@@ -459,4 +460,4 @@ terraform apply
 - [x] notification-service (consumes Kafka events — email via SMTP)
 - [ ] payment-service (Stripe/PayPal — works alongside abonnement)
 - [ ] Prometheus + Grafana observability stack
-- [ ] Redis (replace DB-backed cache, session, queue in api-gateway)
+- [x] Redis (cache, sessions, queue, token blacklist for api-gateway)

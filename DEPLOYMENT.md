@@ -305,9 +305,9 @@ Fully automated on push to `main` in any app repo:
 ```bash
 # All app resources
 kubectl delete deployment abonnement api-gateway api-gateway-mysql mysql \
-  user-service user-service-mysql notification-service kafka -n default
+  user-service user-service-mysql notification-service redis kafka -n default
 kubectl delete service abonnement api-gateway-service api-gateway-mysql-service \
-  mysql user-service user-service-mysql notification-service kafka -n default
+  mysql user-service user-service-mysql notification-service redis kafka -n default
 kubectl delete pvc --all -n default
 kubectl delete secret api-gateway-secret abonnement-secrets mysql-secrets \
   user-service-secret notification-secrets -n default
