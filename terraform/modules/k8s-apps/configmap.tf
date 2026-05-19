@@ -19,11 +19,14 @@ resource "kubernetes_config_map" "api_gateway" {
     CORS_ALLOWED_ORIGINS    = "*"
     GATEWAY_TIMEOUT         = "10"
     SERVICE_ABONNEMENT_URL  = "http://abonnement.${var.namespace}.svc.cluster.local/api"
+    SERVICE_USER_URL        = "http://user-service.${var.namespace}.svc.cluster.local/api"
     SMS_DRIVER              = "log"
     LOG_CHANNEL             = "stdout"
     CACHE_STORE             = "database"
     SESSION_DRIVER          = "database"
     QUEUE_CONNECTION        = "database"
+    KAFKA_BROKERS           = "kafka.${var.namespace}.svc.cluster.local:9092"
+    KAFKA_ENABLED           = "true"
   }
 }
 
