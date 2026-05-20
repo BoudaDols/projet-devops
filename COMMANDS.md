@@ -127,6 +127,21 @@ Quick reference for every command used during deployment and operations.
 | `docker build -t <name>:latest .` | Build a Docker image |
 | `docker build -t abonnement:latest ./abonnement` | Build abonnement image locally |
 | `docker build -t api-gateway:latest ./api-gateway` | Build api-gateway image locally |
+| `docker build -t user-service:latest ./user-service` | Build user-service image locally |
+| `docker build -t notification-service:latest ./notification-service` | Build notification-service image locally |
+| `docker save <name>:latest \| docker exec -i $(docker ps -qf "name=desktop-control-plane") ctr -n k8s.io images import -` | Load image into Kubernetes containerd (Docker Desktop) |
+| `docker pull redis:7-alpine` | Pull Redis image (needed for local k8s) |
+
+---
+
+## Redis
+
+| Command | Purpose |
+|---|---|
+| `kubectl exec -it $(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli` | Open Redis CLI |
+| `kubectl exec -it $(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli -n 1 keys '*'` | List all cache keys (DB 1) |
+| `kubectl exec -it $(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli -n 1 flushdb` | Clear all cache (DB 1) |
+| `kubectl exec -it $(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli info keyspace` | Show key count per database |
 
 ---
 

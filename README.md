@@ -296,7 +296,9 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 
 - JWT tokens signed with HMAC-SHA256, validated on every request
 - UUID-based user identity — non-enumerable, forwarded as `X-User-ID` to all services
-- Token blacklist prevents use of logged-out tokens
+- Token blacklist prevents use of logged-out tokens (Redis-backed with TTL)
+- Access/refresh token model — access token 1h, refresh token 7 days in Redis
+- Redis network policy — only api-gateway can reach Redis on port 6379
 - All internal services are ClusterIP only — unreachable from outside the cluster
 - Network policies enforce strict pod-to-pod access (only gateway can reach internal services)
 - Kafka network policy — only service pods can produce/consume on port 9092
