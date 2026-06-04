@@ -8,12 +8,14 @@ docker build -t abonnement:latest ./abonnement
 docker build -t api-gateway:latest ./api-gateway
 docker build -t user-service:latest ./user-service
 docker build -t notification-service:latest ./notification-service
+docker build -t pdf-service:latest ./pdf-service
 
 echo "==> Loading images into Kubernetes containerd..."
 docker save abonnement:latest | docker exec -i $CONTROL_PLANE ctr -n k8s.io images import -
 docker save api-gateway:latest | docker exec -i $CONTROL_PLANE ctr -n k8s.io images import -
 docker save user-service:latest | docker exec -i $CONTROL_PLANE ctr -n k8s.io images import -
 docker save notification-service:latest | docker exec -i $CONTROL_PLANE ctr -n k8s.io images import -
+docker save pdf-service:latest | docker exec -i $CONTROL_PLANE ctr -n k8s.io images import -
 
 echo "==> Deploying Kafka infrastructure..."
 kubectl apply -f kafka/k8s/local/kafka.yaml
@@ -74,12 +76,27 @@ kubectl apply -f notification-service/k8s/local/deployment.yaml
 kubectl apply -f notification-service/k8s/local/service.yaml
 kubectl apply -f notification-service/k8s/local/network-policy.yaml
 
+echo "==> Deploying pdf-service dependencies..."
+kubectl apply -f pdf-service/k8s/local/secret.yaml
+kubectl apply -f pdf-service/k8s/local/configmap.yaml
+kubectl apply -f pdf-service/k8s/local/mysql.yaml
+kubectl apply -f pdf-service/k8s/local/redis.yaml
+
+echo "==> Waiting for pdf-service MySQL to be ready..."
+kubectl rollout status deployment/pdf-service-mysql --timeout=120s
+
+echo "==> Deploying pdf-service..."
+kubectl apply -f pdf-service/k8s/local/deployment.yaml
+kubectl apply -f pdf-service/k8s/local/service.yaml
+kubectl apply -f pdf-service/k8s/local/network-policy.yaml
+
 echo ""
 echo "==> Waiting for all deployments..."
 kubectl rollout status deployment/abonnement --timeout=120s
 kubectl rollout status deployment/api-gateway --timeout=120s
 kubectl rollout status deployment/user-service --timeout=120s
 kubectl rollout status deployment/notification-service --timeout=120s
+kubectl rollout status deployment/pdf-service --timeout=120s
 
 echo ""
 echo "==> Done. Access the gateway:"

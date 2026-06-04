@@ -20,6 +20,7 @@ resource "kubernetes_config_map" "api_gateway" {
     GATEWAY_TIMEOUT         = "10"
     SERVICE_ABONNEMENT_URL  = "http://abonnement.${var.namespace}.svc.cluster.local/api"
     SERVICE_USER_URL        = "http://user-service.${var.namespace}.svc.cluster.local/api"
+    SERVICE_PDF_URL         = "http://pdf-service.${var.namespace}.svc.cluster.local"
     SMS_DRIVER              = "log"
     LOG_CHANNEL             = "stdout"
     CACHE_STORE             = "redis"

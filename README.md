@@ -8,10 +8,11 @@ Infrastructure repository for a PHP/Go microservices platform. Manages Kubernete
 
 | Service | Technology | Role |
 |---|---|---|
-| `api-gateway` | Laravel 12 / PHP 8.2 | Security gateway, reverse proxy, JWT auth, session management, load balancer |
+| `api-gateway` | Laravel 12 / PHP 8.4 | Security gateway, reverse proxy, JWT auth, session management, load balancer |
 | `abonnement` | PHP 8.4 | Subscription management — internal only |
 | `user-service` | Go 1.22 / Gin | User profiles, preferences, activity history — internal only |
 | `notification-service` | Python 3.12 / Flask | Event-driven email notifications — internal only |
+| `pdf-service` | Python 3.12 / FastAPI | PDF access control based on subscription plan — internal only |
 
 All external traffic enters through `api-gateway`. Internal services are never exposed directly — they are only reachable from within the cluster via the gateway.
 
@@ -29,25 +30,36 @@ All external traffic enters through `api-gateway`. Internal services are never e
                     │                 │  request logging + CORS
                     └────────┬────────┘
                              │
-              ┌──────────────┼──────────────┐
-              │ HTTP (sync)  │              │ HTTP (sync)
-              ▼              │              ▼
-   ┌──────────────────┐      │   ┌──────────────────────┐
-   │   abonnement     │      │   │    user-service       │
-   │   PHP 8.4        │      │   │    Go / Gin           │
-   │   ClusterIP      │      │   │    ClusterIP          │
-   └────────┬─────────┘      │   └──────────┬────────────┘
-            │                │              │
-            ▼                │              ▼
-       MySQL 8.0             │         MySQL 8.0
-       (abonnement)          │         (user_service)
-                             │
-              ┌──────────────┘
-              │ Kafka events
-              ▼
-   ┌──────────────────┐
+      ┌──────────────┬───────┼───────┬──────────────┐
+      │ HTTP (sync)  │       │       │              │ HTTP (sync)
+      ▼              │       │       │              ▼
+┌───────────────┐    │       │       │   ┌──────────────────────┐
+│  abonnement   │    │       │       │   │    user-service       │
+│  PHP 8.4      │    │       │       │   │    Go / Gin           │
+│  ClusterIP    │    │       │       │   │    ClusterIP          │
+└──────┬────────┘    │       │       │   └──────────┬────────────┘
+       │             │       │       │              │
+       ▼             │       │       │              ▼
+  MySQL 8.0          │       │       │         MySQL 8.0
+  (abonnement)       │       │       │         (user_service)
+                     │       │       │
+                     ▼       │       ▼
+          ┌───────────────┐  │  ┌──────────────────┐
+          │  pdf-service  │  │  │ notification-svc  │
+          │  FastAPI      │  │  │ Flask             │
+          │  ClusterIP    │  │  │ ClusterIP         │
+          └──┬───┬───┬────┘  │  └──────────────────┘
+             │   │   │       │           ▲
+             ▼   ▼   ▼       │           │ Kafka consume
+        Redis MySQL S3/Blob  │           │
+                             │           │
+              ┌──────────────┘           │
+              │ Kafka events             │
+              ▼                          │
+   ┌──────────────────┐                 │
    │     Kafka        │  apache/kafka:3.7.0
    │     KRaft mode   │  ClusterIP :9092
+   └──────────────────┘─────────────────┘
    └──────────────────┘
               │
     ┌─────────┴────────────────────┐
@@ -115,6 +127,12 @@ Proj-devops/
 │   ├── k8s/local/                   # Local Kubernetes manifests
 │   └── .github/workflows/
 │       ├── ci.yml                   # Lint (flake8) + tests (pytest)
+│       └── cd.yml                   # Build + deploy to local + AWS + Azure
+├── pdf-service/                     # pdf-service (Python/FastAPI)
+│   ├── k8s/                         # Production Kubernetes manifests
+│   ├── k8s/local/                   # Local Kubernetes manifests
+│   └── .github/workflows/
+│       ├── ci.yml                   # Lint (ruff) + tests (pytest)
 │       └── cd.yml                   # Build + deploy to local + AWS + Azure
 ├── user-service/                    # user-service (Go)
 │   ├── k8s/local/                   # Local Kubernetes manifests
@@ -206,9 +224,27 @@ Authorization: Bearer <jwt>
 
 ---
 
+## pdf-service Features
+
+| Feature | Status |
+|---|---|
+| PDF catalog (list, get metadata) | 🔲 |
+| Open reading session — returns pre-signed URL from S3/Azure Blob | 🔲 |
+| Close reading session — persists duration to MySQL | 🔲 |
+| Free plan: 1 PDF/day, 30 minutes max reading time | 🔲 |
+| Basic plan: 1 PDF/day, unlimited reading time | 🔲 |
+| Premium plan: unlimited PDFs, unlimited time | 🔲 |
+| Redis-based real-time session & daily counter tracking | 🔲 |
+| MySQL reading history (logged on session close) | 🔲 |
+| S3 and Azure Blob storage abstraction (switchable via env) | 🔲 |
+| `/health` endpoint for Kubernetes probes | 🔲 |
+| Network policy — only api-gateway can reach it | 🔲 |
+
+---
+
 ## CI/CD Pipeline
 
-### App repositories (api-gateway, abonnement, user-service, notification-service)
+### App repositories (api-gateway, abonnement, user-service, notification-service, pdf-service)
 
 ```
 push to any branch
@@ -273,6 +309,9 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 
 | Resource | Description |
 |---|---|
+| `pdf-service` Deployment | 1 replica, FastAPI + Redis sessions + S3/Blob storage |
+| `pdf-service-mysql` Deployment | MySQL 8.0, 1Gi PVC (reading history) |
+| `pdf-service-redis` Deployment | Redis 7, session counters + daily limits |
 | `redis` Deployment | Redis 7 alpine, no persistence — cache/sessions/queue for api-gateway |
 | `notification-service` Deployment | 1 replica, Kafka consumer thread + Flask /health |
 | `api-gateway` Deployment | 1 replica, liveness + readiness probes |
@@ -285,6 +324,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 | `api-gateway-service` | LoadBalancer (cloud) / port-forward (local) |
 | `abonnement` Service | ClusterIP — internal only |
 | `notification-service` Service | ClusterIP — internal only (health probe only) |
+| `pdf-service` Service | ClusterIP — internal only |
 | `user-service` Service | ClusterIP — internal only |
 | `kafka` Service | ClusterIP — internal only |
 | Network policies | Strict pod-to-pod access control |
@@ -418,6 +458,19 @@ terraform apply
 | `AZURE_CREDENTIALS` | Azure service principal JSON |
 | `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
 
+### pdf-service repo
+
+| Secret | Description |
+|---|---|
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | DockerHub credentials |
+| `DB_PASSWORD` | pdf-service MySQL root password |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | AWS credentials (S3 access) |
+| `AZURE_STORAGE_CONNECTION_STRING` | Azure Blob connection string |
+| `KUBECONFIG_LOCAL` | Local cluster kubeconfig |
+| `EKS_CLUSTER_NAME` | EKS cluster name |
+| `AZURE_CREDENTIALS` | Azure service principal JSON |
+| `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
+
 ### user-service repo
 
 | Secret | Description |
@@ -460,6 +513,6 @@ terraform apply
 - [ ] Azure deployment (pending Azure AD service principal)
 - [ ] Kafka external access for local monitoring/debugging
 - [x] notification-service (consumes Kafka events — email via SMTP)
-- [ ] payment-service (Stripe/PayPal — works alongside abonnement)
+- [ ] pdf-service (PDF access control based on subscription plan — S3/Azure Blob)
 - [ ] Prometheus + Grafana observability stack
 - [x] Redis (cache, sessions, queue, token blacklist for api-gateway)

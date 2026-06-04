@@ -8,6 +8,7 @@ This project is a PHP/Go/Python microservices platform composed of four services
 - `abonnement` — PHP app. Subscription management. Internal only.
 - `user-service` — Go app. User profiles, preferences, activity history. Internal only.
 - `notification-service` — Python/Flask app. Event-driven email notifications. Kafka consumer only. Internal only.
+- `pdf-service` — Python/FastAPI app. PDF access control based on subscription plan. S3/Azure Blob storage. Internal only.
 
 Each service owns its own MySQL database (except `notification-service` which has no database). No shared database. Synchronous communication is HTTP via the gateway. Asynchronous communication uses Kafka.
 
@@ -33,6 +34,12 @@ Proj-devops/                        # Infrastructure repo
 │   ├── k8s/local/                      # Local Kubernetes manifests
 │   └── .github/workflows/
 │       ├── ci.yml                      # Lint (flake8) + tests (pytest)
+│       └── cd.yml                      # Build + deploy to local + AWS + Azure
+├── pdf-service/                        # pdf-service (Python/FastAPI)
+│   ├── k8s/                            # Production Kubernetes manifests
+│   ├── k8s/local/                      # Local Kubernetes manifests
+│   └── .github/workflows/
+│       ├── ci.yml                      # Lint (ruff) + tests (pytest)
 │       └── cd.yml                      # Build + deploy to local + AWS + Azure
 ├── abonnement/                     # abonnement app + k8s manifests
 ├── api-gateway/                    # api-gateway app + k8s manifests
@@ -125,6 +132,19 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 | `AZURE_CREDENTIALS` | Azure service principal JSON |
 | `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
 
+### pdf-service repo
+
+| Secret | Description |
+|---|---|
+| `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | DockerHub credentials |
+| `DB_PASSWORD` | pdf-service MySQL root password |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | AWS credentials (S3) |
+| `AZURE_STORAGE_CONNECTION_STRING` | Azure Blob connection string |
+| `KUBECONFIG_LOCAL` | kubeconfig for local cluster |
+| `EKS_CLUSTER_NAME` | EKS cluster name |
+| `AZURE_CREDENTIALS` | Azure service principal JSON |
+| `AKS_CLUSTER_NAME` / `AKS_RESOURCE_GROUP` | AKS cluster info |
+
 ### notification-service repo
 
 | Secret | Description |
@@ -196,12 +216,13 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 ```
 
 This script:
-1. Builds Docker images for all four services
+1. Builds Docker images for all five services
 2. Deploys Kafka (KRaft mode)
 3. Deploys abonnement + MySQL
-4. Deploys api-gateway + MySQL + runs migrations
+4. Deploys api-gateway + MySQL + Redis + runs migrations
 5. Deploys user-service + MySQL
 6. Deploys notification-service (no database — Kafka consumer + SMTP)
+7. Deploys pdf-service + MySQL + Redis
 
 ---
 
@@ -305,9 +326,9 @@ Fully automated on push to `main` in any app repo:
 ```bash
 # All app resources
 kubectl delete deployment abonnement api-gateway api-gateway-mysql mysql \
-  user-service user-service-mysql notification-service redis kafka -n default
+  user-service user-service-mysql notification-service pdf-service pdf-service-mysql pdf-service-redis redis kafka -n default
 kubectl delete service abonnement api-gateway-service api-gateway-mysql-service \
-  mysql user-service user-service-mysql notification-service redis kafka -n default
+  mysql user-service user-service-mysql notification-service pdf-service pdf-service-mysql pdf-service-redis redis kafka -n default
 kubectl delete pvc --all -n default
 kubectl delete secret api-gateway-secret abonnement-secrets mysql-secrets \
   user-service-secret notification-secrets -n default
