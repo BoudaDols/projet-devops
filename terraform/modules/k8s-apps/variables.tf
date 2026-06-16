@@ -77,3 +77,10 @@ variable "default_recipient" {
   type        = string
   sensitive   = true
 }
+
+# pdf-service secrets
+variable "pdf_service_db_password" {
+  description = "pdf-service MySQL root password"
+  type        = string
+  sensitive   = true
+}

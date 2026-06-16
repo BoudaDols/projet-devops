@@ -13,3 +13,6 @@ user_service_db_password = "<strong-password>"
 smtp_user         = "<your-mailtrap-smtp-user>"
 smtp_pass         = "<your-mailtrap-smtp-password>"
 default_recipient = "<fallback-email@example.com>"
+
+# pdf-service
+pdf_service_db_password = "<strong-password>"

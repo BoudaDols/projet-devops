@@ -4,5 +4,9 @@ terraform/**/.terraform/
 terraform/**/.terraform.lock.hcl
 terraform/**/terraform.tfstate
 terraform/**/terraform.tfstate.backup
+.idea/
 abonnement/
 api-gateway/
+notification-service/
+pdf-service/
+user-service/

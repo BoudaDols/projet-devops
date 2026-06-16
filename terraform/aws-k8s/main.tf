@@ -63,4 +63,5 @@ module "k8s_apps" {
   smtp_user                = var.smtp_user
   smtp_pass                = var.smtp_pass
   default_recipient        = var.default_recipient
+  pdf_service_db_password  = var.pdf_service_db_password
 }
