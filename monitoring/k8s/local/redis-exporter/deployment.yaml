@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: monitoring
+  labels:
+    app: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      containers:
+        - name: redis-exporter
+          image: oliver006/redis_exporter:v1.66.0
+          args:
+            # Scrape both Redis instances (api-gateway + pdf-service)
+            - "--redis.addr=redis://redis.default.svc.cluster.local:6379,redis://pdf-service-redis.default.svc.cluster.local:6379"
+          ports:
+            - containerPort: 9121
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "50m"
+              memory: "64Mi"

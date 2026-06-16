@@ -1,0 +1,38 @@
+# MySQL exporter for api-gateway-mysql
+# For simplicity, we deploy one exporter per MySQL instance.
+# In production you'd use the multi-target pattern.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-exporter
+  namespace: monitoring
+  labels:
+    app: mysql-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-exporter
+  template:
+    metadata:
+      labels:
+        app: mysql-exporter
+    spec:
+      containers:
+        - name: mysql-exporter
+          image: prom/mysqld-exporter:v0.15.1
+          args:
+            - "--mysqld.address=api-gateway-mysql-service.default.svc.cluster.local:3306"
+            - "--mysqld.username=root"
+          env:
+            - name: MYSQLD_EXPORTER_PASSWORD
+              value: "secret"  # In production, use a secret reference
+          ports:
+            - containerPort: 9104
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "50m"
+              memory: "64Mi"

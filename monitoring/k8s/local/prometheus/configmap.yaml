@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    # Global config — applies to all scrape jobs
+    global:
+      scrape_interval: 15s      # How often to scrape targets
+      evaluation_interval: 15s  # How often to evaluate alerting rules
+
+    # Scrape configurations — each job defines a set of targets
+    scrape_configs:
+
+      # Job 1: Prometheus scrapes itself (for internal metrics)
+      - job_name: "prometheus"
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      # Job 2: kube-state-metrics — pod/deployment/node status
+      - job_name: "kube-state-metrics"
+        static_configs:
+          - targets: ["kube-state-metrics.monitoring.svc.cluster.local:8080"]
+
+      # Job 3: Redis exporter — metrics for both Redis instances
+      - job_name: "redis"
+        static_configs:
+          - targets:
+              - "redis-exporter.monitoring.svc.cluster.local:9121"
+
+      # Job 4: MySQL exporter — metrics for all MySQL instances
+      - job_name: "mysql"
+        static_configs:
+          - targets:
+              - "mysql-exporter.monitoring.svc.cluster.local:9104"
+
+      # Job 5: Auto-discover any pod with prometheus.io/scrape annotation
+      # This is how we'll scrape app /metrics endpoints later (Option 1)
+      - job_name: "kubernetes-pods"
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ["default"]
+        relabel_configs:
+          # Only scrape pods with annotation prometheus.io/scrape = "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          # Use the annotation prometheus.io/port as the scrape port
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+)
+            replacement: ${1}
+          # Rewrite target address to pod_ip:port
+          - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+);(.+)
+            replacement: ${1}:${2}
+          # Use the annotation prometheus.io/path or default to /metrics
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          # Add pod name as a label
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+          # Add namespace as a label
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          # Add app label
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: replace
+            target_label: app
