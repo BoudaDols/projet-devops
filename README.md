@@ -513,6 +513,7 @@ terraform apply
 - [ ] Azure deployment (pending Azure AD service principal)
 - [ ] Kafka external access for local monitoring/debugging
 - [x] notification-service (consumes Kafka events — email via SMTP)
-- [ ] pdf-service (PDF access control based on subscription plan — S3/Azure Blob)
+- [x] pdf-service (PDF access control based on subscription plan — S3/Azure Blob)
 - [ ] Prometheus + Grafana observability stack
 - [x] Redis (cache, sessions, queue, token blacklist for api-gateway)
+- [ ] Frontend (Vue 3 + Vite + Tailwind — S3/Azure Blob + CDN hosting, httpOnly cookie auth)
