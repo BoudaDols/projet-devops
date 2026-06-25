@@ -1,0 +1,39 @@
+# This ConfigMap tells Grafana where to find dashboard JSON files on disk.
+# Each "path" corresponds to a volume mount in the deployment where we place
+# dashboard JSON ConfigMaps. Grafana watches these directories and loads/updates
+# dashboards automatically.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-providers
+  namespace: monitoring
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: "Kubernetes"
+        orgId: 1
+        folder: "Infrastructure"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/k8s
+
+      - name: "MySQL"
+        orgId: 1
+        folder: "Databases"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/mysql
+
+      - name: "Redis"
+        orgId: 1
+        folder: "Databases"
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/redis

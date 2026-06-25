@@ -91,14 +91,51 @@ kubectl apply -f pdf-service/k8s/local/service.yaml
 kubectl apply -f pdf-service/k8s/local/network-policy.yaml
 
 echo ""
+echo "==> Deploying monitoring stack..."
+kubectl apply -f monitoring/k8s/local/namespace.yaml
+kubectl apply -f monitoring/k8s/local/prometheus/rbac.yaml
+kubectl apply -f monitoring/k8s/local/prometheus/configmap.yaml
+kubectl apply -f monitoring/k8s/local/prometheus/deployment.yaml
+kubectl apply -f monitoring/k8s/local/prometheus/service.yaml
+kubectl apply -f monitoring/k8s/local/kube-state-metrics/rbac.yaml
+kubectl apply -f monitoring/k8s/local/kube-state-metrics/deployment.yaml
+kubectl apply -f monitoring/k8s/local/kube-state-metrics/service.yaml
+kubectl apply -f monitoring/k8s/local/mysql-exporter/deployment.yaml
+kubectl apply -f monitoring/k8s/local/mysql-exporter/service.yaml
+kubectl apply -f monitoring/k8s/local/redis-exporter/deployment.yaml
+kubectl apply -f monitoring/k8s/local/redis-exporter/service.yaml
+
+echo "==> Deploying Grafana..."
+kubectl apply -f monitoring/k8s/local/grafana/datasource.yaml
+kubectl apply -f monitoring/k8s/local/grafana/dashboards.yaml
+kubectl apply -f monitoring/k8s/local/grafana/dashboard-k8s.yaml
+kubectl apply -f monitoring/k8s/local/grafana/dashboard-mysql.yaml
+kubectl apply -f monitoring/k8s/local/grafana/dashboard-redis.yaml
+kubectl apply -f monitoring/k8s/local/grafana/deployment.yaml
+kubectl apply -f monitoring/k8s/local/grafana/service.yaml
+
+echo ""
 echo "==> Waiting for all deployments..."
 kubectl rollout status deployment/abonnement --timeout=120s
 kubectl rollout status deployment/api-gateway --timeout=120s
 kubectl rollout status deployment/user-service --timeout=120s
 kubectl rollout status deployment/notification-service --timeout=120s
 kubectl rollout status deployment/pdf-service --timeout=120s
+kubectl rollout status deployment/prometheus -n monitoring --timeout=120s
+kubectl rollout status deployment/kube-state-metrics -n monitoring --timeout=120s
+kubectl rollout status deployment/mysql-exporter -n monitoring --timeout=120s
+kubectl rollout status deployment/redis-exporter -n monitoring --timeout=120s
+kubectl rollout status deployment/grafana -n monitoring --timeout=120s
 
 echo ""
 echo "==> Done. Access the gateway:"
 echo "    kubectl port-forward svc/api-gateway-service 8080:80"
 echo "    → http://localhost:8080"
+echo ""
+echo "    Prometheus UI:"
+echo "    kubectl port-forward svc/prometheus 9090:9090 -n monitoring"
+echo "    → http://localhost:9090"
+echo ""
+echo "    Grafana UI:"
+echo "    kubectl port-forward svc/grafana 3000:3000 -n monitoring"
+echo "    → http://localhost:3000"
