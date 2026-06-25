@@ -13,6 +13,7 @@ Infrastructure repository for a PHP/Go microservices platform. Manages Kubernete
 | `user-service` | Go 1.22 / Gin | User profiles, preferences, activity history — internal only |
 | `notification-service` | Python 3.12 / Flask | Event-driven email notifications — internal only |
 | `pdf-service` | Python 3.12 / FastAPI | PDF access control based on subscription plan — internal only |
+| `frontend` | Vue 3 / Vite / Tailwind | SPA — S3/Blob + CDN hosting, httpOnly cookie auth |
 
 All external traffic enters through `api-gateway`. Internal services are never exposed directly — they are only reachable from within the cluster via the gateway.
 
@@ -106,12 +107,21 @@ Proj-devops/
 ├── terraform/
 │   ├── modules/
 │   │   ├── k8s-apps/                # Shared k8s resources (all services, Kafka, network policies)
+│   │   ├── frontend/                # S3 + CloudFront (AWS), Blob + CDN (Azure)
 │   │   └── registry/                # ECR (AWS) or ACR (Azure)
 │   ├── aws/                         # Stage 1 — VPC + EKS + S3/DynamoDB backend
 │   ├── aws-k8s/                     # Stage 2 — Kubernetes resources on EKS
 │   └── azure/                       # AKS + VNet + k8s resources
 ├── kafka/
 │   └── k8s/local/                   # Kafka local Kubernetes manifests
+├── monitoring/
+│   └── k8s/local/                   # Monitoring stack local manifests
+│       ├── namespace.yaml           # monitoring namespace
+│       ├── prometheus/              # Prometheus server (config, RBAC, deployment)
+│       ├── kube-state-metrics/      # Cluster state metrics exporter
+│       ├── mysql-exporter/          # MySQL metrics exporter
+│       ├── redis-exporter/          # Redis metrics exporter
+│       └── grafana/                 # Grafana (dashboards, datasource, deployment)
 ├── abonnement/                      # abonnement service (submodule / sibling repo)
 │   ├── k8s/local/                   # Local Kubernetes manifests
 │   └── .github/workflows/
@@ -139,6 +149,9 @@ Proj-devops/
 │   └── .github/workflows/
 │       ├── ci.yml                   # Lint + tests + Docker build
 │       └── cd.yml                   # Deploy to local + AWS + Azure
+├── frontend/                        # Vue 3 SPA (Vite + Tailwind + Pinia)
+│   └── .github/workflows/
+│       └── cd.yml                   # Build + upload dist/ to S3/Blob
 ├── deploy-local.sh                  # One-command local deployment
 ├── DEPLOYMENT.md                    # Architecture decisions + full deploy/destroy guide
 └── COMMANDS.md                      # Quick reference for all commands
@@ -228,17 +241,105 @@ Authorization: Bearer <jwt>
 
 | Feature | Status |
 |---|---|
-| PDF catalog (list, get metadata) | 🔲 |
-| Open reading session — returns pre-signed URL from S3/Azure Blob | 🔲 |
-| Close reading session — persists duration to MySQL | 🔲 |
-| Free plan: 1 PDF/day, 30 minutes max reading time | 🔲 |
-| Basic plan: 1 PDF/day, unlimited reading time | 🔲 |
-| Premium plan: unlimited PDFs, unlimited time | 🔲 |
-| Redis-based real-time session & daily counter tracking | 🔲 |
-| MySQL reading history (logged on session close) | 🔲 |
-| S3 and Azure Blob storage abstraction (switchable via env) | 🔲 |
-| `/health` endpoint for Kubernetes probes | 🔲 |
-| Network policy — only api-gateway can reach it | 🔲 |
+| PDF catalog (list, get metadata) | ✅ |
+| Open reading session — returns pre-signed URL from S3/Azure Blob | ✅ |
+| Close reading session — persists duration to MySQL | ✅ |
+| Free plan: 1 PDF/day, 30 minutes max reading time | ✅ |
+| Basic plan: 1 PDF/day, unlimited reading time | ✅ |
+| Premium plan: unlimited PDFs, unlimited time | ✅ |
+| Redis-based real-time session & daily counter tracking | ✅ |
+| MySQL reading history (logged on session close) | ✅ |
+| S3 and Azure Blob storage abstraction (switchable via env) | ✅ |
+| `/health` endpoint for Kubernetes probes | ✅ |
+| Network policy — only api-gateway can reach it | ✅ |
+
+---
+
+## Frontend (planned)
+
+| Technology | Purpose |
+|---|---|
+| Vue 3 + Vite | SPA framework + build tool |
+| Tailwind CSS | Utility-first styling |
+| Pinia | State management (access token in memory) |
+| Vue Router | Client-side routing |
+| Axios | HTTP client with interceptors |
+
+### Authentication flow (httpOnly cookie)
+
+```
+┌──────────────┐         ┌───────────────┐         ┌──────────┐
+│   Browser    │         │  api-gateway  │         │  Redis   │
+└──────┬───────┘         └───────┬───────┘         └────┬─────┘
+       │  POST /api/auth/login    │                      │
+       │─────────────────────────►│                      │
+       │                          │  validate creds      │
+       │                          │  generate tokens     │
+       │  200 + access_token JSON │                      │
+       │  Set-Cookie: refresh_token (httpOnly, Secure)   │
+       │◄─────────────────────────│                      │
+       │                          │  store refresh in    │
+       │                          │─────────────────────►│
+       │                          │                      │
+       │  GET /api/services/...   │                      │
+       │  Authorization: Bearer access_token             │
+       │─────────────────────────►│                      │
+       │                          │                      │
+       │  (access token expired)  │                      │
+       │  POST /api/auth/refresh  │                      │
+       │  Cookie sent auto by browser                    │
+       │─────────────────────────►│                      │
+       │                          │  read cookie         │
+       │                          │  validate refresh    │
+       │  200 + new access_token  │─────────────────────►│
+       │◄─────────────────────────│                      │
+       │                          │                      │
+       │  POST /api/auth/logout   │                      │
+       │─────────────────────────►│                      │
+       │  Set-Cookie: refresh_token=; Max-Age=0          │
+       │◄─────────────────────────│  blacklist token     │
+       │                          │─────────────────────►│
+```
+
+**Key decisions:**
+- Refresh token stored as `HttpOnly; Secure; SameSite=Strict; Path=/api/auth/refresh` — never accessible to JavaScript
+- Access token stored in Pinia (memory only) — not in localStorage, not in cookies
+- On page refresh: SPA calls `/api/auth/refresh` → browser sends cookie automatically → gets new access token
+- CORS configured with `credentials: true` for the frontend domain
+
+### Pages
+
+| Page | Route | Description |
+|---|---|---|
+| Login | `/login` | Email + password |
+| Register | `/register` | Create account |
+| Reset Password | `/reset-password` | Request reset link + set new password |
+| Dashboard | `/` | Welcome, quick stats |
+| Profile | `/profile` | View/edit name, email |
+| Plans | `/plans` | Browse and subscribe |
+| My Subscription | `/subscription` | Current plan, cancel |
+| PDF Library | `/library` | Browse and open PDFs |
+
+### Deployment strategy
+
+| Environment | How | Infrastructure |
+|---|---|---|
+| Local dev | `npm run dev` (Vite dev server with proxy to api-gateway) | — |
+| AWS production | S3 bucket + CloudFront CDN (HTTPS, SPA routing) | Terraform `modules/frontend/` |
+| Azure production | Blob Storage + Azure CDN | Terraform `modules/frontend/` |
+
+### CI/CD
+
+```
+push to main (frontend/)
+      │
+      ▼
+   CD workflow
+   ├── npm ci + npm run build
+   ├── Upload dist/ to S3 (AWS)
+   ├── Invalidate CloudFront cache
+   └── Upload dist/ to Blob (Azure)
+```
 
 ---
 
@@ -329,6 +430,13 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 | `kafka` Service | ClusterIP — internal only |
 | Network policies | Strict pod-to-pod access control |
 | `api-gateway-migrations` Job | Runs `php artisan migrate --force` on deploy |
+| `prometheus` Deployment | prom/prometheus:v2.53.0, 7d retention, ConfigMap-based config |
+| `kube-state-metrics` Deployment | k8s.io/kube-state-metrics:v2.13.0, cluster state metrics |
+| `mysql-exporter` Deployment | prom/mysqld-exporter:v0.15.1, scrapes api-gateway MySQL |
+| `redis-exporter` Deployment | oliver006/redis_exporter:v1.66.0, scrapes both Redis instances |
+| `grafana` Deployment | grafana/grafana:11.1.0, pre-provisioned dashboards, anonymous admin |
+| `prometheus` Service | ClusterIP :9090 (monitoring namespace) |
+| `grafana` Service | ClusterIP :3000 (monitoring namespace) |
 
 ---
 
@@ -497,6 +605,17 @@ terraform apply
 | `DB_PASSWORD_USER_SERVICE` | user-service MySQL root password |
 | `DOCKERHUB_USERNAME` | DockerHub username |
 
+### frontend repo
+
+| Secret | Description |
+|---|---|
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | AWS credentials for S3 upload |
+| `S3_BUCKET_NAME` | Frontend S3 bucket name |
+| `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution to invalidate |
+| `AZURE_CREDENTIALS` | Azure service principal JSON |
+| `AZURE_STORAGE_ACCOUNT` / `AZURE_CONTAINER_NAME` | Azure Blob Storage for frontend |
+| `VITE_API_BASE_URL` | api-gateway URL for production builds |
+
 ---
 
 ## Documentation
@@ -514,6 +633,14 @@ terraform apply
 - [ ] Kafka external access for local monitoring/debugging
 - [x] notification-service (consumes Kafka events — email via SMTP)
 - [x] pdf-service (PDF access control based on subscription plan — S3/Azure Blob)
-- [ ] Prometheus + Grafana observability stack
+- [x] Prometheus observability (metrics collection + exporters)
+- [x] Grafana dashboards (Kubernetes, MySQL, Redis)
 - [x] Redis (cache, sessions, queue, token blacklist for api-gateway)
 - [ ] Frontend (Vue 3 + Vite + Tailwind — S3/Azure Blob + CDN hosting, httpOnly cookie auth)
+  - [ ] api-gateway: httpOnly cookie for refresh token (Set-Cookie on login/register, read from cookie on refresh, clear on logout)
+  - [ ] api-gateway: CORS update for credentials from frontend domain
+  - [ ] frontend/ project: Vue 3 + Vite + Tailwind + Pinia + Vue Router
+  - [ ] Pages: Login, Register, Reset Password, Dashboard, Profile, Plans, My Subscription, PDF Library
+  - [ ] Axios interceptors: httpOnly cookie-aware, access token in memory (Pinia)
+  - [ ] Terraform module: S3 + CloudFront (AWS), Blob Storage + CDN (Azure)
+  - [ ] CI/CD: build Vue app → upload dist/ to S3/Blob
