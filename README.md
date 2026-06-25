@@ -186,6 +186,8 @@ Proj-devops/
 | Phone + OTP authentication (V2) | ✅ |
 | Admin role management | ✅ |
 | X-User-ID header forwarding to services | ✅ |
+| httpOnly cookie refresh token (Secure, SameSite=Strict) | ✅ |
+| CORS with credentials (explicit origin allowlist) | ✅ |
 
 ### Service Proxy
 
@@ -302,7 +304,7 @@ Authorization: Bearer <jwt>
 ```
 
 **Key decisions:**
-- Refresh token stored as `HttpOnly; Secure; SameSite=Strict; Path=/api/auth/refresh` — never accessible to JavaScript
+- Refresh token stored as `HttpOnly; Secure; SameSite=Strict; Path=/api/auth` — never accessible to JavaScript
 - Access token stored in Pinia (memory only) — not in localStorage, not in cookies
 - On page refresh: SPA calls `/api/auth/refresh` → browser sends cookie automatically → gets new access token
 - CORS configured with `credentials: true` for the frontend domain
@@ -445,7 +447,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 - JWT tokens signed with HMAC-SHA256, validated on every request
 - UUID-based user identity — non-enumerable, forwarded as `X-User-ID` to all services
 - Token blacklist prevents use of logged-out tokens (Redis-backed with TTL)
-- Access/refresh token model — access token 1h, refresh token 7 days in Redis
+- Access/refresh token model — access token 1h in memory, refresh token 14 days as httpOnly cookie (Redis-backed)
 - Redis network policy — only api-gateway can reach Redis on port 6379
 - All internal services are ClusterIP only — unreachable from outside the cluster
 - Network policies enforce strict pod-to-pod access (only gateway can reach internal services)
@@ -637,8 +639,8 @@ terraform apply
 - [x] Grafana dashboards (Kubernetes, MySQL, Redis)
 - [x] Redis (cache, sessions, queue, token blacklist for api-gateway)
 - [ ] Frontend (Vue 3 + Vite + Tailwind — S3/Azure Blob + CDN hosting, httpOnly cookie auth)
-  - [ ] api-gateway: httpOnly cookie for refresh token (Set-Cookie on login/register, read from cookie on refresh, clear on logout)
-  - [ ] api-gateway: CORS update for credentials from frontend domain
+  - [x] api-gateway: httpOnly cookie for refresh token (Set-Cookie on login/register, read from cookie on refresh, clear on logout)
+  - [x] api-gateway: CORS update for credentials from frontend domain
   - [ ] frontend/ project: Vue 3 + Vite + Tailwind + Pinia + Vue Router
   - [ ] Pages: Login, Register, Reset Password, Dashboard, Profile, Plans, My Subscription, PDF Library
   - [ ] Axios interceptors: httpOnly cookie-aware, access token in memory (Pinia)
