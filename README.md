@@ -107,8 +107,7 @@ Proj-devops/
 ├── terraform/
 │   ├── modules/
 │   │   ├── k8s-apps/                # Shared k8s resources (all services, Kafka, network policies)
-│   │   ├── frontend/                # S3 + CloudFront (AWS), Blob + CDN (Azure)
-│   │   └── registry/                # ECR (AWS) or ACR (Azure)
+│   │   └── frontend/                # S3 + CloudFront (AWS), Blob + CDN (Azure)
 │   ├── aws/                         # Stage 1 — VPC + EKS + S3/DynamoDB backend
 │   ├── aws-k8s/                     # Stage 2 — Kubernetes resources on EKS
 │   └── azure/                       # AKS + VNet + k8s resources

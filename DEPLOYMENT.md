@@ -25,8 +25,7 @@ Proj-devops/                        # Infrastructure repo
 ├── terraform/
 │   ├── modules/
 │   │   ├── k8s-apps/               # Shared Kubernetes resources (all services + Kafka)
-│   │   ├── frontend/               # S3 + CloudFront (AWS), Blob + CDN (Azure)
-│   │   └── registry/               # ECR (AWS) or ACR (Azure)
+│   │   └── frontend/               # S3 + CloudFront (AWS), Blob + CDN (Azure)
 │   ├── aws/                        # AWS infrastructure (VPC, EKS, S3, DynamoDB)
 │   ├── aws-k8s/                    # AWS Kubernetes resources
 │   └── azure/                      # Azure infrastructure (VNet, AKS)
