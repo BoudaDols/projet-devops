@@ -395,6 +395,8 @@ push to main (terraform/** files changed)
 | EKS | v1.30, `t3.small` node | Kubernetes cluster |
 | S3 | Versioned + AES256 encrypted | Terraform state |
 | DynamoDB | PAY_PER_REQUEST | Terraform state locking |
+| S3 | Static website + versioned | Frontend dist/ hosting |
+| CloudFront | PriceClass_100 (US+EU) | CDN, HTTPS, SPA routing |
 
 AWS Terraform is split into two stages to avoid provider timeout issues:
 - `terraform/aws/` — provisions VPC and EKS cluster
@@ -407,6 +409,8 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 | VNet | Single subnet | Network isolation |
 | AKS system pool | `Standard_B2s` (1 node) | Stable node for MySQL |
 | AKS spot pool | `Standard_B2s` spot | App pods (up to 90% cheaper) |
+| Storage Account | Standard_LRS, static website | Frontend dist/ hosting |
+| CDN Profile | Standard_Microsoft | HTTPS, caching |
 
 ### Kubernetes (both clouds)
 
@@ -638,11 +642,11 @@ terraform apply
 - [x] Prometheus observability (metrics collection + exporters)
 - [x] Grafana dashboards (Kubernetes, MySQL, Redis)
 - [x] Redis (cache, sessions, queue, token blacklist for api-gateway)
-- [ ] Frontend (Vue 3 + Vite + Tailwind — S3/Azure Blob + CDN hosting, httpOnly cookie auth)
+- [x] Frontend (Vue 3 + Vite + Tailwind — S3/Azure Blob + CDN hosting, httpOnly cookie auth)
   - [x] api-gateway: httpOnly cookie for refresh token (Set-Cookie on login/register, read from cookie on refresh, clear on logout)
   - [x] api-gateway: CORS update for credentials from frontend domain
-  - [ ] frontend/ project: Vue 3 + Vite + Tailwind + Pinia + Vue Router
-  - [ ] Pages: Login, Register, Reset Password, Dashboard, Profile, Plans, My Subscription, PDF Library
-  - [ ] Axios interceptors: httpOnly cookie-aware, access token in memory (Pinia)
-  - [ ] Terraform module: S3 + CloudFront (AWS), Blob Storage + CDN (Azure)
-  - [ ] CI/CD: build Vue app → upload dist/ to S3/Blob
+  - [x] frontend/ project: Vue 3 + Vite + Tailwind + Pinia + Vue Router
+  - [x] Pages: Login, Register, Reset Password, Dashboard, Profile, Plans, My Subscription, PDF Library
+  - [x] Axios interceptors: httpOnly cookie-aware, access token in memory (Pinia)
+  - [x] Terraform module: S3 + CloudFront (AWS), Blob Storage + CDN (Azure)
+  - [x] CI/CD: build Vue app → upload dist/ to S3/Blob

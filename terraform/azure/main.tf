@@ -122,3 +122,15 @@ module "k8s_apps" {
 
   depends_on = [azurerm_kubernetes_cluster.this]
 }
+
+# ─────────────────────────────────────────────
+# Frontend — Blob Storage + Azure CDN
+# ─────────────────────────────────────────────
+module "frontend" {
+  source = "../modules/frontend"
+
+  cloud               = "azure"
+  project_name        = "proj-devops"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+}

@@ -165,3 +165,14 @@ resource "aws_dynamodb_table" "tfstate_lock" {
     type = "S"
   }
 }
+
+# ─────────────────────────────────────────────
+# Frontend — S3 + CloudFront
+# ─────────────────────────────────────────────
+module "frontend" {
+  source = "../modules/frontend"
+
+  cloud        = "aws"
+  project_name = "proj-devops"
+  aws_region   = var.aws_region
+}
