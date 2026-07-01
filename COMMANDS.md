@@ -135,6 +135,32 @@ Quick reference for every command used during deployment and operations.
 
 ---
 
+## Frontend (Vue 3 + Vite)
+
+### Local development
+
+| Command | Purpose |
+|---|---|
+| `cd frontend && npm run dev` | Start Vite dev server (localhost:5173, proxies /api to :8080) |
+| `cd frontend && npm run build` | Build for production (output in dist/) |
+| `cd frontend && npm run preview` | Preview production build locally |
+
+### AWS deployment (manual)
+
+| Command | Purpose |
+|---|---|
+| `aws s3 sync dist/ s3://proj-devops-frontend --delete` | Upload dist/ to S3 |
+| `aws cloudfront create-invalidation --distribution-id <id> --paths "/*"` | Invalidate CloudFront cache |
+
+### Azure deployment (manual)
+
+| Command | Purpose |
+|---|---|
+| `az storage blob upload-batch --account-name projdevopsfrontend --destination '$web' --source dist/ --overwrite` | Upload dist/ to Azure Blob |
+| `az cdn endpoint purge --resource-group proj-devops-rg --profile-name proj-devops-frontend-cdn --name proj-devops-frontend --content-paths "/*"` | Purge Azure CDN cache |
+
+---
+
 ## Redis
 
 | Command | Purpose |
@@ -143,6 +169,26 @@ Quick reference for every command used during deployment and operations.
 | `kubectl exec -it $(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli -n 1 keys '*'` | List all cache keys (DB 1) |
 | `kubectl exec -it $(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli -n 1 flushdb` | Clear all cache (DB 1) |
 | `kubectl exec -it $(kubectl get pod -l app=redis -o jsonpath='{.items[0].metadata.name}') -- redis-cli info keyspace` | Show key count per database |
+
+---
+
+## Monitoring (Prometheus + Grafana)
+
+### Access UIs
+
+| Command | Purpose |
+|---|---|
+| `kubectl port-forward svc/prometheus 9090:9090 -n monitoring` | Prometheus UI → http://localhost:9090 |
+| `kubectl port-forward svc/grafana 3000:3000 -n monitoring` | Grafana UI → http://localhost:3000 (anonymous admin) |
+
+### Inspect
+
+| Command | Purpose |
+|---|---|
+| `kubectl get pods -n monitoring` | List monitoring pods |
+| `kubectl logs -l app=prometheus -n monitoring --tail=20` | Prometheus logs |
+| `kubectl logs -l app=grafana -n monitoring --tail=20` | Grafana logs |
+| `kubectl get configmap prometheus-config -n monitoring -o yaml` | View Prometheus scrape config |
 
 ---
 

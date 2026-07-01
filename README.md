@@ -473,6 +473,7 @@ AWS Terraform is split into two stages to avoid provider timeout issues:
 - `kubectl`
 - `terraform` >= 1.7.0
 - `go` >= 1.22
+- Node.js >= 22
 - AWS CLI
 - Azure CLI
 
@@ -487,6 +488,12 @@ cd Proj-devops
 # Access the gateway
 kubectl port-forward svc/api-gateway-service 8080:80 -n default
 # → http://localhost:8080
+
+# Start the frontend (in another terminal)
+cd frontend
+npm install
+npm run dev
+# → http://localhost:5173
 ```
 
 ### AWS deployment

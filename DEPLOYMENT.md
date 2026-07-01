@@ -9,8 +9,9 @@ This project is a PHP/Go/Python microservices platform composed of four services
 - `user-service` — Go app. User profiles, preferences, activity history. Internal only.
 - `notification-service` — Python/Flask app. Event-driven email notifications. Kafka consumer only. Internal only.
 - `pdf-service` — Python/FastAPI app. PDF access control based on subscription plan. S3/Azure Blob storage. Internal only.
+- `frontend` — Vue 3 SPA. Static files hosted on S3 + CloudFront (AWS) or Blob Storage + CDN (Azure). Communicates with the gateway via httpOnly cookie auth.
 
-Each service owns its own MySQL database (except `notification-service` which has no database). No shared database. Synchronous communication is HTTP via the gateway. Asynchronous communication uses Kafka.
+Each service owns its own MySQL database (except `notification-service` which has no database and `frontend` which is a static SPA). No shared database. Synchronous communication is HTTP via the gateway. Asynchronous communication uses Kafka.
 
 ---
 
@@ -24,6 +25,7 @@ Proj-devops/                        # Infrastructure repo
 ├── terraform/
 │   ├── modules/
 │   │   ├── k8s-apps/               # Shared Kubernetes resources (all services + Kafka)
+│   │   ├── frontend/               # S3 + CloudFront (AWS), Blob + CDN (Azure)
 │   │   └── registry/               # ECR (AWS) or ACR (Azure)
 │   ├── aws/                        # AWS infrastructure (VPC, EKS, S3, DynamoDB)
 │   ├── aws-k8s/                    # AWS Kubernetes resources
@@ -43,7 +45,10 @@ Proj-devops/                        # Infrastructure repo
 │       └── cd.yml                      # Build + deploy to local + AWS + Azure
 ├── abonnement/                     # abonnement app + k8s manifests
 ├── api-gateway/                    # api-gateway app + k8s manifests
-└── user-service/                   # user-service (Go) + k8s manifests
+├── user-service/                   # user-service (Go) + k8s manifests
+└── frontend/                       # Vue 3 SPA (Vite + Tailwind + Pinia)
+    └── .github/workflows/
+        └── cd.yml                  # Build + upload dist/ to S3/Blob
 ```
 
 ---
@@ -100,6 +105,12 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 
 ### 14. notification-service is stateless and Kafka-only
 `notification-service` has no database and no inbound HTTP traffic from other services. It only consumes Kafka events and sends emails via SMTP. This keeps it completely decoupled — it can be stopped, restarted, or scaled without affecting any other service. Kafka retains unprocessed messages so no events are lost during downtime.
+
+### 15. Frontend is a static SPA (no server)
+The frontend is a Vue 3 SPA built with Vite. In production it's deployed as static files to S3 + CloudFront (AWS) or Blob Storage + Azure CDN — no container, no Kubernetes pod. This makes it cheap, fast (edge-cached), and independently deployable. The SPA communicates with the api-gateway using httpOnly cookies for refresh tokens and Bearer tokens in memory for access tokens.
+
+### 16. httpOnly cookie for refresh tokens
+Refresh tokens are stored as browser-managed httpOnly cookies (`Secure; SameSite=Strict; Path=/api/auth`). JavaScript cannot read them — the browser sends them automatically to auth endpoints. Access tokens are stored in Pinia (memory only) and lost on page refresh. On reload, the SPA calls `/api/auth/refresh` and the browser sends the cookie silently to restore the session.
 
 ---
 
@@ -187,6 +198,18 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 | `DEFAULT_RECIPIENT` | notification-service fallback recipient email |
 | `DOCKERHUB_USERNAME` | DockerHub username |
 
+### frontend repo
+
+| Secret | Description |
+|---|---|
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` | AWS credentials for S3 upload |
+| `S3_BUCKET_NAME` | Frontend S3 bucket name |
+| `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution to invalidate |
+| `VITE_API_BASE_URL` | api-gateway URL for production builds |
+| `AZURE_CREDENTIALS` | Azure service principal JSON |
+| `AZURE_STORAGE_ACCOUNT` | Azure Blob Storage account name |
+| `AKS_RESOURCE_GROUP` | Azure resource group (for CDN purge) |
+
 ---
 
 ## Prerequisites
@@ -195,10 +218,11 @@ kubectl port-forward svc/api-gateway-service 8080:80 -n default
 - `kubectl`
 - `terraform` >= 1.7.0
 - `go` >= 1.22
+- Node.js >= 22 (for frontend)
 - AWS CLI configured with appropriate permissions
 - Azure CLI logged in (`az login`)
-- DockerHub account with repositories for `api-gateway`, `abonnement`, `user-service`, `notification-service`
-- Python 3.12+ (for notification-service local development)
+- DockerHub account with repositories for `api-gateway`, `abonnement`, `user-service`, `notification-service`, `pdf-service`
+- Python 3.12+ (for notification-service and pdf-service local development)
 
 ---
 
@@ -223,6 +247,14 @@ This script:
 5. Deploys user-service + MySQL
 6. Deploys notification-service (no database — Kafka consumer + SMTP)
 7. Deploys pdf-service + MySQL + Redis
+8. Deploys monitoring stack (Prometheus, Grafana, exporters)
+
+**Frontend (local dev):**
+```bash
+cd frontend
+npm run dev
+# → http://localhost:5173 (proxies /api to localhost:8080)
+```
 
 ---
 
@@ -375,7 +407,7 @@ terraform destroy
 ## CI/CD Flow Summary
 
 ```
-App push to main
+App push to main (api-gateway, abonnement, user-service, notification-service, pdf-service)
       │
       ▼
    CI workflow
@@ -388,13 +420,21 @@ App push to main
       ├── deploy-aws    (ubuntu-latest, aws eks + kubectl set image)
       └── deploy-azure  (ubuntu-latest, az aks + kubectl set image)
 
+Frontend push to main
+      │
+      ▼
+   CD workflow
+      ├── Build (npm ci → npm run build)
+      ├── deploy-aws    (S3 sync + CloudFront invalidation)
+      └── deploy-azure  (Blob upload + CDN purge)
+
 Infra push to main (terraform/** files)
       │
       ▼
    tf-static-analysis (fmt + validate + tfsec) — on every push/PR
       │
    infra.yml (terraform apply)
-      ├── deploy-aws        (terraform/aws  → VPC + EKS)
+      ├── deploy-aws        (terraform/aws  → VPC + EKS + S3 + CloudFront)
       ├── deploy-aws-k8s    (terraform/aws-k8s → all k8s resources)
-      └── deploy-azure      (terraform/azure → VNet + AKS + all k8s resources)
+      └── deploy-azure      (terraform/azure → VNet + AKS + Blob + CDN + all k8s resources)
 ```
