@@ -28,8 +28,9 @@ module "vpc" {
 
   # No private subnets, no NAT Gateway — nodes run in public subnets
   # Services are still internal (ClusterIP + network policies)
-  enable_nat_gateway   = false
-  enable_dns_hostnames = true
+  enable_nat_gateway            = false
+  enable_dns_hostnames          = true
+  map_public_ip_on_launch       = true  # Auto-assign public IPs to instances in public subnets
 
   public_subnet_tags = {
     "kubernetes.io/role/elb" = "1"
