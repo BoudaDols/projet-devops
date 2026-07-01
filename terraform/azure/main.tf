@@ -127,9 +127,8 @@ module "k8s_apps" {
 # Frontend — Blob Storage + Azure CDN
 # ─────────────────────────────────────────────
 module "frontend" {
-  source = "../modules/frontend"
+  source = "../modules/frontend-azure"
 
-  cloud               = "azure"
   project_name        = "proj-devops"
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location

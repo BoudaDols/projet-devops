@@ -30,5 +30,5 @@ output "frontend_cloudfront_id" {
 
 output "frontend_url" {
   description = "Frontend URL (update CORS_ALLOWED_ORIGINS in api-gateway configmap with this)"
-  value       = module.frontend.frontend_url_aws
+  value       = module.frontend.frontend_url
 }
