@@ -103,7 +103,7 @@ resource "kubernetes_deployment" "kafka" {
           }
           env {
             name  = "KAFKA_LOG_DIRS"
-            value = "/var/lib/kafka/data"
+            value = "/var/lib/kafka/data/kraft-logs"
           }
           env {
             name  = "KAFKA_HEAP_OPTS"
