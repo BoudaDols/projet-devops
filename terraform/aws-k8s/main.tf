@@ -33,14 +33,18 @@ data "terraform_remote_state" "aws" {
 # ─────────────────────────────────────────────
 # Kubernetes provider — uses EKS cluster
 # ─────────────────────────────────────────────
-data "aws_eks_cluster_auth" "this" {
-  name = data.terraform_remote_state.aws.outputs.eks_cluster_name
-}
-
+# ─────────────────────────────────────────────
+# Kubernetes provider — uses EKS cluster
+# ─────────────────────────────────────────────
 provider "kubernetes" {
   host                   = data.terraform_remote_state.aws.outputs.eks_cluster_endpoint
   cluster_ca_certificate = base64decode(data.terraform_remote_state.aws.outputs.eks_cluster_ca)
-  token                  = data.aws_eks_cluster_auth.this.token
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", data.terraform_remote_state.aws.outputs.eks_cluster_name, "--region", var.aws_region]
+  }
 }
 
 # ─────────────────────────────────────────────

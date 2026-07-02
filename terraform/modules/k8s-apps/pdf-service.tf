@@ -53,6 +53,8 @@ resource "kubernetes_persistent_volume_claim" "pdf_service_mysql" {
       }
     }
   }
+
+  wait_until_bound = false
 }
 
 resource "kubernetes_deployment" "pdf_service_mysql" {

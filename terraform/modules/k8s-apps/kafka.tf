@@ -14,6 +14,8 @@ resource "kubernetes_persistent_volume_claim" "kafka" {
       }
     }
   }
+
+  wait_until_bound = false
 }
 
 resource "kubernetes_deployment" "kafka" {
