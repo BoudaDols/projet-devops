@@ -41,6 +41,10 @@ resource "kubernetes_deployment" "kafka" {
       }
 
       spec {
+        security_context {
+          fs_group = 1000  # Kafka runs as appuser (uid 1000) — EBS volume needs matching ownership
+        }
+
         container {
           name  = "kafka"
           image = "apache/kafka:3.7.0"
